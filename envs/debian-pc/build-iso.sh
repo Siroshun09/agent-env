@@ -66,7 +66,8 @@ fi
 
 log "パスワード生成"
 # 記号を避けて入力しやすくする（英数字 20 文字 ≒ 119 bit）
-PASSWORD="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 20)"
+# （tr | head だと SIGPIPE で pipefail に引っかかるので、有限の入力から切り出す）
+PASSWORD="$(head -c 1024 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | cut -c 1-20)"
 [[ ${#PASSWORD} -eq 20 ]] || die "パスワードを生成できませんでした"
 
 log "ISO の組み立て"
