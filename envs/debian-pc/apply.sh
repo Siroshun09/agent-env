@@ -30,6 +30,8 @@ flock -n 9 || die "別の apply.sh が実行中です"
 cd "${REPO_ROOT}"
 [[ -z "$(git status --porcelain)" ]] || die "${REPO_ROOT} に未コミットの変更があります（git -C ${REPO_ROOT} status で確認）"
 
+[[ "$(git symbolic-ref --quiet --short HEAD || true)" == main ]] || die "main ブランチ以外では反映できません（git -C ${REPO_ROOT} switch main）"
+
 git fetch --quiet origin main
 prev="$(git rev-parse HEAD)"
 next="$(git rev-parse origin/main)"
@@ -58,8 +60,10 @@ chmod 0700 "${LOG_DIR}"
 log() { printf '%s %s\n' "$(date -Is)" "$*" >> "${LOG}"; }
 log "START ${prev} -> ${next} (by ${SUDO_USER:-root})"
 [[ "$(git rev-parse HEAD)" == "${prev}" ]] || die "承認中に HEAD が変わりました。反映しません"
-git merge --quiet --ff-only "${next}"
-[[ "$(git rev-parse HEAD)" == "${next}" ]] || { log "NG ${next} (HEAD mismatch after merge)"; die "反映後の HEAD が ${next} ではありません"; }
+if ! git merge --quiet --ff-only "${next}" || [[ "$(git rev-parse HEAD)" != "${next}" ]]; then
+  log "NG ${next} (git update failed)"
+  die "${next} に更新できませんでした（bootstrap は実行していません）"
+fi
 
 # 反映後のスクリプトで実行する
 set +e

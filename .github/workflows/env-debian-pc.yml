@@ -49,7 +49,7 @@ jobs:
 
   bootstrap:
     # Debian 13 コンテナで bootstrap を2回実行し、冪等に成功することを確認する。
-    # 続けて apply.sh（手動反映）が、非対話・初回セットアップ未完了・同時実行・不承認では何も変えず、承認したときだけ反映することを確認する。
+    # 続けて apply.sh（手動反映）が、非対話・初回セットアップ未完了・同時実行・main 以外・不承認では何も変えず、承認したときだけ反映することを確認する。
     # （docker デーモンが必要なので ubuntu-slim は使えない）
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -86,6 +86,11 @@ jobs:
           # 別の apply.sh が実行中（ロック取得中）: 失敗し、何も変えない
           if printf 'yes\n' | flock /run/agent-env-apply.lock script -qec "${apply}" /dev/null; then exit 1; fi
           test "$(git -C /opt/agent-env rev-parse HEAD)" = "${base}"
+          # main 以外のブランチ: 失敗し、何も変えない
+          git -C /opt/agent-env switch -q -c other
+          if printf 'yes\n' | script -qec "${apply}" /dev/null; then exit 1; fi
+          test "$(git -C /opt/agent-env rev-parse HEAD)" = "${base}"
+          git -C /opt/agent-env switch -q main
           # 承認しない: 失敗し、何も変えない
           if printf 'no\n' | script -qec "${apply}" /dev/null > out.txt; then exit 1; fi
           grep -q "${next}" out.txt
@@ -138,7 +143,24 @@ jobs:
           # ログ（パスワードを含む）と鍵はリポジトリ外に置く。リポジトリ内だと未コミットの変更とみなされる
           ssh-keygen -q -t ed25519 -N '' -f "${RUNNER_TEMP}/ci-key"
           ./build-iso.sh --ssh-key "${RUNNER_TEMP}/ci-key.pub" > "${RUNNER_TEMP}/build.log"
-          test -s ../../out/agent-env-debian-pc.iso
+      - name: check ISO contents
+        run: |
+          # 実機インストール前の回帰防止: 起動メニュー・preseed・同梱ファイルが期待どおり組み込まれているか
+          iso=../../out/agent-env-debian-pc.iso
+          dir="$(mktemp -d)"
+          xorriso -osirrox on -indev "${iso}" \
+            -extract /boot/grub/grub.cfg "${dir}/grub.cfg" \
+            -extract /isolinux/isolinux.cfg "${dir}/isolinux.cfg" \
+            -extract /install.amd/initrd.gz "${dir}/initrd.gz" \
+            -ls /agent-env 2>/dev/null > "${dir}/files.txt"
+          for f in repo.bundle authorized_keys late-command.sh select-disk.sh; do grep -q "'${f}'" "${dir}/files.txt"; done
+          grep -q '^menuentry "agent-env: Automated install' "${dir}/grub.cfg"
+          grep -q '^set timeout=-1$' "${dir}/grub.cfg"
+          grep -qx 'default agentenv' "${dir}/isolinux.cfg"
+          grep -qx 'timeout 0' "${dir}/isolinux.cfg"
+          gzip -dc "${dir}/initrd.gz" > "${dir}/initrd" 2>/dev/null || true
+          grep -aq 'partman/early_command string sh /cdrom/agent-env/select-disk.sh' "${dir}/initrd"
+          grep -aqE 'user-password-crypted password [$]6[$][./A-Za-z0-9]+[$][./A-Za-z0-9]{86}$' "${dir}/initrd"
       - name: remove ISO (contains a password)
         if: always()
         working-directory: .

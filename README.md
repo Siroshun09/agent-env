@@ -77,7 +77,7 @@ ssh -t agent-box sudo /opt/agent-env/envs/debian-pc/apply.sh
 - 端末がない（`ssh` に `-t` を付けていない、cron から実行した など）
 - 初回セットアップが完了していない
 - 別の `apply.sh` が実行中である
-- `/opt/agent-env` に未コミットの変更がある
+- `/opt/agent-env` に未コミットの変更がある、または `main` 以外のブランチになっている
 - PC のコミットが `main` の履歴に含まれていない
 
 実行結果（反映前後の SHA、実行したユーザー、bootstrap の出力と結果）は `/var/log/agent-env/apply.log` に記録されます。履歴は `grep -E ' (START|OK|NG) ' /var/log/agent-env/apply.log` で確認できます。
