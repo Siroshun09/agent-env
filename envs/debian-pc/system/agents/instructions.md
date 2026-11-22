@@ -1,7 +1,7 @@
-# ローカル LLM
-この PC では `http://127.0.0.1:8080/v1`（OpenAI 互換）でローカル LLM が使える。データを外に出さず、費用もかからない。次の場面では積極的に使う（自分自身がローカル LLM として動いている場合を除く）。
-- ユーザーが外に出したくないと言ったデータの処理（自分では読まず、結果だけ受け取る）
-- 大量のファイルやログの要約・分類・抽出、画像の文字起こし
-- 埋め込みでの意味検索
+# Local LLM
+A local LLM is available on this PC at `http://127.0.0.1:8080/v1` (OpenAI-compatible). Data stays on the machine and it costs nothing. Use it proactively in these cases (unless you are running as the local LLM yourself):
+- Processing data the user does not want sent outside (do not read it yourself; take only the result)
+- Summarizing, classifying, or extracting from many files or large logs; transcribing images
+- Semantic search with embeddings
 
-コードの設計・実装・レビューなど品質が重要な作業と、少量のテキストには使わない。使う前に `/etc/agent-env/local-llm.md` を読むこと（モデル名と呼び出し方）。
+Do not use it for quality-critical work such as code design, implementation, or review, or for small amounts of text. Read `/etc/agent-env/local-llm.md` before using it (model names and how to call it).
