@@ -35,7 +35,7 @@ envs/debian-pc/                Debian 13 の実 PC
   apply.sh                     main の変更を、確認・承認したうえで PC に反映する
   packages.txt                 インストールするパッケージ
   tools.conf                   apt で入らないツール（OpenCode、llama.cpp）とローカル LLM のモデルのバージョンとハッシュ
-  system/                      systemd ユニット、apt の設定とリポジトリ、エージェントのツールの管理者用の設定
+  system/                      systemd ユニット、apt の設定とリポジトリ、エージェントのツールの管理者用の設定、GitHub のトークンの使い分け
 .github/workflows/             CI（静的検査、ISO のビルド、bootstrap と apply.sh のテスト）
 ```
 
@@ -70,7 +70,13 @@ ssh -t agent-box sudo -iu agent
 `agent` ユーザーで次を実行します。
 - Claude Code: `cd ~/work && claude` を起動してログインします。表示された URL を Mac のブラウザで開いて認証します。続けて表示される `~/work` を信頼するかの確認で、信頼を選びます（Remote Control は、信頼済みのフォルダーでしか動きません）。
 - OpenCode: `opencode` を起動し（ブラウザの Web UI からでも可）、`/connect` で OpenAI を選んで ChatGPT のプランでサインインします。管理者用の設定で、OpenAI とローカル LLM 以外のモデル提供元は使えないようにしています。
-- GitHub: [fine-grained personal access token](https://github.com/settings/personal-access-tokens) を発行し、`gh auth login --with-token` に標準入力で渡してから `gh auth setup-git` を実行します。トークンは対象のリポジトリに限定し、権限は Contents と Pull requests の Read and write だけにして、有効期限を付けてください。`main` へのマージはブランチ保護で防ぎます。
+- GitHub: [fine-grained personal access token](https://github.com/settings/personal-access-tokens) を、リポジトリの持ち主（個人と各 org）ごとに 1 枚ずつ発行し、`agent-env-github-token set <持ち主>` で保存します（トークンを貼り付け、Enter と Ctrl+D）。fine-grained PAT は 1 枚で 1 つの持ち主のリポジトリにしか使えないためです。
+  - トークンは対象のリポジトリに限定し、権限は Contents と Pull requests の Read and write だけにして、有効期限を付けてください。org のトークンは、org の設定で fine-grained PAT が許可されている必要があります（管理者の承認が必要な場合もあります）。`main` へのマージはブランチ保護で防ぎます。
+  - git は接続先の URL（`https://github.com/<持ち主>/...`）、gh は操作対象のリポジトリ（`-R`、`gh repo clone <持ち主>/<名前>`、今いるリポジトリの `gh repo set-default` やリモートなど）から持ち主を判断し、そのトークンを使います。エージェントは使い分けを意識する必要はありません。
+  - 持ち主のトークンが無い場合や、持ち主がわからない場合は、どのトークンも使いません（別の持ち主のトークンを誤って使わないため）。
+  - SSH の URL（`git@github.com:...`、`ssh://git@github.com/...`）は、git が HTTPS に読み替えます。この PC には SSH の鍵を置かず、トークンで認証するためです。
+  - `gh auth login` と `gh auth setup-git` は使えないようにしています。以前の方式で保存した gh の認証情報と git の設定は、bootstrap が削除します。
+  - 保存済みのトークンの一覧は `agent-env-github-token list`、削除は `agent-env-github-token remove <持ち主>` です。トークンは `~/.config/agent-env/github-tokens/` に保存されます（`agent` ユーザーだけが読めます）。
 
 エージェントのツールの管理者用の設定（`envs/debian-pc/system/claude-code/`、`envs/debian-pc/system/opencode/`）は、bootstrap が `/etc/claude-code/` と `/etc/opencode/` に配置します。`agent` ユーザーの設定では上書きできません。
 
