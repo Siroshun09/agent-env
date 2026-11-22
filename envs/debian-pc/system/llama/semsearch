@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""ファイルの中身を意味で検索する（ローカル LLM の埋め込みモデルを使う）。
+
+使い方: semsearch [-n 件数] "探したい内容" [ファイルやディレクトリ ...]
+  パスを省略すると、今のディレクトリ以下を探す。
+  埋め込みの結果は ~/.cache/semsearch/ に保存し、変わっていない部分は 2 回目から計算しない。
+
+bootstrap.sh が /usr/local/bin/semsearch に配置する。llama-server（127.0.0.1:8080）を使うので、PC 上で実行する。
+"""
+
+import argparse
+import hashlib
+import json
+import math
+import os
+import sqlite3
+import sys
+import urllib.error
+import urllib.request
+from array import array
+
+API = "http://127.0.0.1:8080/v1/embeddings"
+MODEL = "qwen3-embedding-0.6b"
+# Qwen3-Embedding は、検索する側の文にだけ指示文を付けると精度が上がる
+QUERY_PREFIX = "Instruct: Given a search query, retrieve relevant passages that answer the query\nQuery: "
+# 1 つの塊の最大文字数（日本語ではほぼトークン数になる）
+CHUNK_CHARS = 1500
+MAX_FILE_BYTES = 1_000_000
+BATCH = 16
+SKIP_DIRS = {"node_modules", "vendor", "target", "build", "dist", "__pycache__", "venv"}
+
+
+def iter_files(paths):
+    for path in paths:
+        if os.path.isfile(path):
+            yield path
+            continue
+        for root, dirs, files in os.walk(path):
+            dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d not in SKIP_DIRS)
+            for name in sorted(files):
+                if not name.startswith("."):
+                    yield os.path.join(root, name)
+
+
+def read_text(path):
+    try:
+        if os.path.getsize(path) > MAX_FILE_BYTES:
+            return None
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError:
+        return None
+    if b"\0" in data:
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def chunks_of(text):
+    """空行で区切った段落を、CHUNK_CHARS 以内にまとめる。(開始行, 本文) を返す。"""
+    paragraphs, buf, start = [], [], 1
+    for i, line in enumerate(text.splitlines(), 1):
+        if line.strip():
+            if not buf:
+                start = i
+            buf.append(line)
+        elif buf:
+            paragraphs.append((start, "\n".join(buf)))
+            buf = []
+    if buf:
+        paragraphs.append((start, "\n".join(buf)))
+
+    out, cur, cur_start = [], "", 1
+    for start, para in paragraphs:
+        # 長すぎる段落は機械的に切る
+        pieces = [para[i:i + CHUNK_CHARS] for i in range(0, len(para), CHUNK_CHARS)]
+        for piece in pieces:
+            if cur and len(cur) + len(piece) + 2 > CHUNK_CHARS:
+                out.append((cur_start, cur))
+                cur = ""
+            if not cur:
+                cur_start = start
+            cur = f"{cur}\n\n{piece}" if cur else piece
+    if cur:
+        out.append((cur_start, cur))
+    return out
+
+
+def embed(texts):
+    body = json.dumps({"model": MODEL, "input": texts}).encode()
+    req = urllib.request.Request(API, body, {"content-type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=600) as res:
+            data = json.load(res)["data"]
+    except urllib.error.HTTPError as e:
+        sys.exit(f"semsearch: llama-server がエラーを返しました（{e.code}）: {e.read()[:300].decode(errors='replace')}")
+    except urllib.error.URLError as e:
+        sys.exit(f"semsearch: llama-server（127.0.0.1:8080）に接続できません: {e.reason}")
+    vecs = []
+    for d in sorted(data, key=lambda d: d["index"]):
+        v = d["embedding"]
+        norm = math.sqrt(sum(x * x for x in v)) or 1.0
+        vecs.append([x / norm for x in v])
+    return vecs
+
+
+def open_cache():
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    os.makedirs(os.path.join(base, "semsearch"), exist_ok=True)
+    db = sqlite3.connect(os.path.join(base, "semsearch", f"{MODEL}.sqlite"))
+    db.execute("CREATE TABLE IF NOT EXISTS emb (hash TEXT PRIMARY KEY, vec BLOB)")
+    return db
+
+
+def main():
+    p = argparse.ArgumentParser(description="ファイルの中身を意味で検索する（ローカル LLM の埋め込みモデルを使う）")
+    p.add_argument("-n", type=int, default=5, help="表示する件数（既定: 5）")
+    p.add_argument("query", help="探したい内容（文章で書いてよい）")
+    p.add_argument("paths", nargs="*", default=["."], help="探すファイルやディレクトリ（既定: 今のディレクトリ）")
+    args = p.parse_args()
+
+    items = []  # (path, line, text, hash)
+    for path in iter_files(args.paths):
+        text = read_text(path)
+        if not text:
+            continue
+        for line, chunk in chunks_of(text):
+            h = hashlib.sha256(chunk.encode()).hexdigest()
+            items.append((path, line, chunk, h))
+    if not items:
+        sys.exit("semsearch: 検索できるテキストファイルがありません")
+
+    db = open_cache()
+    vecs = {}
+    hashes = list({h for *_, h in items})
+    for i in range(0, len(hashes), 500):
+        part = hashes[i:i + 500]
+        q = f"SELECT hash, vec FROM emb WHERE hash IN ({','.join('?' * len(part))})"
+        for h, blob in db.execute(q, part):
+            vecs[h] = array("f", blob)
+    todo = {h: text for _, _, text, h in items if h not in vecs}
+    if todo:
+        print(f"semsearch: {len(todo)} 個の塊の埋め込みを計算します", file=sys.stderr)
+    todo = list(todo.items())
+    for i in range(0, len(todo), BATCH):
+        part = todo[i:i + BATCH]
+        for (h, _), v in zip(part, embed([t for _, t in part])):
+            vecs[h] = array("f", v)
+            db.execute("INSERT OR REPLACE INTO emb VALUES (?, ?)", (h, vecs[h].tobytes()))
+        db.commit()
+
+    qv = embed([QUERY_PREFIX + args.query])[0]
+    scored = sorted(((sum(a * b for a, b in zip(qv, vecs[h])), path, line, text)
+                     for path, line, text, h in items), reverse=True)
+    for score, path, line, text in scored[:args.n]:
+        print(f"{score:.3f}  {path}:{line}")
+        for l in text.splitlines()[:4]:
+            print(f"    {l[:160]}")
+        print()
+
+
+if __name__ == "__main__":
+    main()

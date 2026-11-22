@@ -148,6 +148,8 @@ if [[ ! -x "${llama_dir}/llama-server" ]]; then
   rm -rf "${tmp}"
 fi
 ln -sfn "${LLAMA_CPP_VERSION}" /opt/llama.cpp/current
+# 埋め込みのモデルを使う検索コマンド（llama-server が無いときはエラーを表示するだけ）
+install -m 0755 "${ENV_DIR}/system/llama/semsearch" /usr/local/bin/semsearch
 # 古いバージョンを消す（動作中のサーバーは、再起動するまで古いファイルを使い続ける）
 find /opt/llama.cpp -mindepth 1 -maxdepth 1 -type d ! -name "${LLAMA_CPP_VERSION}" -exec rm -rf {} +
 

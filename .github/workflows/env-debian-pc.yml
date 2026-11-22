@@ -183,6 +183,10 @@ jobs:
 
           # ローカル LLM: llama.cpp は GPU が無くても入る。モデルとサーバーは GPU が無ければ入れない
           /opt/llama.cpp/current/llama-server --version
+          # 検索コマンド: llama-server が動いていなければ、分かるエラーで止まる
+          su - agent -c "semsearch --help" | grep -q "探したい内容"
+          if su - agent -c "semsearch test /etc/hostname" 2> /tmp/semsearch.err; then exit 1; fi
+          grep -q "llama-server（127.0.0.1:8080）に接続できません" /tmp/semsearch.err
           # サービスはルーターモード（モデルの切り替え）の引数を使う
           /opt/llama.cpp/current/llama-server --help | grep -q -- "--models-preset PATH"
           /opt/llama.cpp/current/llama-server --help | grep -q -- "--models-max N"

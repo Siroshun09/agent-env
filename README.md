@@ -121,6 +121,7 @@ NVIDIA の GPU がある PC では、llama.cpp の `llama-server` がサービ�
 - llama-server はルーターモードで動き、リクエストの `"model"` で指定されたモデルを必要になった時点で読み込みます（同時に 2 つまで）。初回の呼び出しは読み込みの分だけ遅くなります。
 - OpenCode からは、モデル `llama-cpp/qwen3.6-35b-a3b` として使えます（管理者用の設定で登録済み。画像も渡せます）。スクリプトなどからは `http://127.0.0.1:8080/v1` を直接呼び、`"model"` にモデル名を指定します。
 - Mac からは、`ssh -N agent-box` を実行したまま http://localhost:8080 を開くとチャット画面を使えます。
+- `semsearch "探したい内容" [ファイルやディレクトリ ...]` で、ファイルの中身を意味で検索できます（埋め込みのモデルを使います。PC 上で実行し、パスを省略すると今のディレクトリ以下を探します）。言葉が一致しなくても、内容が近い箇所を見つけます。結果は `~/.cache/semsearch/` に保存し、変わっていない部分は 2 回目から計算しません。エージェントにも「`semsearch` で探して」と頼めます。
 - モデルを追加・削除するときは、`tools.conf` の `LLAMA_FILES`、`system/llama-models.ini`、`envs/debian-pc/system/opencode/opencode.jsonc` を書き換えます。`tools.conf` から消したファイルは、次の bootstrap で消えます。モデルは / （128GB）に置くので、合計サイズに注意してください。
 - llama.cpp は毎日リリースされるので、Renovate の更新 PR は週 1 回です。バージョンと SHA256（GitHub がリリースの添付ファイルごとに公開している値）を一緒に更新します。
 
