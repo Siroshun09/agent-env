@@ -51,7 +51,7 @@ jobs:
     # Debian 13 コンテナで bootstrap を2回実行し、冪等に成功することを確認する。
     # 続けて apply.sh（手動反映）が、非対話・初回セットアップ未完了・同時実行・main 以外・不承認では何も変えず、承認したときだけ反映することを確認する。
     # （docker デーモンが必要なので ubuntu-slim は使えない）
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
