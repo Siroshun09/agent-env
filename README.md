@@ -53,6 +53,7 @@ envs/debian-pc/                Debian 13 の実 PC
    - 書き込みだけをやり直す場合は `envs/debian-pc/write-usb.sh` を実行します。書き込みを省く場合は `--no-write` を付けます。
 2. PC を USB メモリから起動し、メニューの `agent-env: Automated install (ERASES DISK)` を選んで Enter を押します。誤って再インストールしないよう、メニューは自動では進みません。
 3. 一覧からインストール先のディスクを選び、確認画面で `Yes` を選びます（既定は `No`）。選んだディスクのデータはすべて消去されます。USB メモリ自体は一覧に表示されません。この後は自動で進みます。
+   - パーティションは LVM で、`/` が 128GB（ローカル LLM のモデルを含む）、swap が 8GB、`/home`（エージェントの作業場所）が残りすべてです。ディスクが小さい場合は比率に応じて縮みます。
 4. インストールが終わると再起動します。NVIDIA の GPU があり Secure Boot が有効な PC では、起動前に `Press any key to perform MOK management` と表示されるので、10 秒以内にキーを押します。青い MokManager の画面で `Enroll MOK` → `Continue` → `Yes` を選び、ISO の作成時に表示された MOK のパスワード（数字 8 桁。`out/agent-env-debian-pc.password` の 2 行目）を入力して `Reboot` を選びます。これは NVIDIA ドライバーの署名鍵を登録する手順で、Secure Boot の仕様上、PC の前での操作が必要です。
    - 10 秒以内にキーを押さなかった場合は、そのまま通常の起動に進みます。見逃した場合や、インストール中の申請に失敗した場合は、初回起動時の bootstrap が申請し直すので、次の再起動で同じ操作をしてください（`journalctl -u agent-env-firstboot` に案内が出ます）。
 5. 初回起動時に bootstrap が自動で実行されます。失敗した場合は 60 秒ごとに再試行します。進み具合は `journalctl -fu agent-env-firstboot` で確認できます。
