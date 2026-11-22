@@ -22,8 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # renovate: datasource=github-releases depName=rhysd/actionlint
+  # renovate: datasource=github-release-attachments depName=rhysd/actionlint
   ACTIONLINT_VERSION: v1.7.12
+  ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
   # renovate: datasource=pypi depName=zizmor
   ZIZMOR_VERSION: 1.32.0
 
@@ -50,6 +51,7 @@ jobs:
         run: |
           tarball="actionlint_${ACTIONLINT_VERSION#v}_linux_amd64.tar.gz"
           curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/${ACTIONLINT_VERSION}/${tarball}"
+          echo "${ACTIONLINT_SHA256}  ${tarball}" | sha256sum -c -
           tar -xzf "${tarball}" actionlint
           ./actionlint
       - name: zizmor

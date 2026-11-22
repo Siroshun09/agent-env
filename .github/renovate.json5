@@ -5,13 +5,13 @@
   ],
   customManagers: [
     {
-      description: 'ワークフローの env で固定しているツール（直前の "# renovate:" コメントで対象を指定）',
+      description: 'ワークフローの env で固定しているツール（直前の "# renovate:" コメントで対象を指定し、*_SHA256 があれば一緒に更新）',
       customType: 'regex',
       managerFilePatterns: [
         '/^\\.github/workflows/.+\\.ya?ml$/',
       ],
       matchStrings: [
-        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+\\w+_VERSION: (?<currentValue>\\S+)',
+        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+\\w+_VERSION: (?<currentValue>\\S+)(?:\\s+\\w+_SHA256: (?<currentDigest>[0-9a-f]{64}))?',
       ],
     },
     {
