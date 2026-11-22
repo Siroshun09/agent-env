@@ -53,7 +53,8 @@ jobs:
           curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/${ACTIONLINT_VERSION}/${tarball}"
           echo "${ACTIONLINT_SHA256}  ${tarball}" | sha256sum -c -
           tar -xzf "${tarball}" actionlint
-          ./actionlint
+          # actionlint v1.7.12 は ubuntu-26.04 を認識しないため、このラベルのエラーだけ除外する
+          ./actionlint -ignore 'label "ubuntu-26\.04" is unknown'
       - name: zizmor
         run: pipx run "zizmor==${ZIZMOR_VERSION}" --offline --format=github .github/workflows/
 
