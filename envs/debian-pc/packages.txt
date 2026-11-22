@@ -13,6 +13,7 @@ fd-find
 unzip
 less
 procps
+systemd
 tmux
 python3
 openssl

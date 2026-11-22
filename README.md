@@ -62,8 +62,8 @@ ssh -t agent-box sudo -iu agent
 ```
 
 `agent` ユーザーで次を実行します。
-- Claude Code: `claude` を起動してログインします。表示された URL を Mac のブラウザで開いて認証します。
-- OpenCode: `opencode` を起動し、`/connect` で OpenAI を選んで ChatGPT のプランでサインインします。管理者用の設定で、OpenAI 以外のモデル提供元は使えないようにしています。
+- Claude Code: `cd ~/work && claude` を起動してログインします。表示された URL を Mac のブラウザで開いて認証します。続けて表示される `~/work` を信頼するかの確認で、信頼を選びます（Remote Control は、信頼済みのフォルダーでしか動きません）。
+- OpenCode: `opencode` を起動し（ブラウザの Web UI からでも可）、`/connect` で OpenAI を選んで ChatGPT のプランでサインインします。管理者用の設定で、OpenAI 以外のモデル提供元は使えないようにしています。
 - GitHub: [fine-grained personal access token](https://github.com/settings/personal-access-tokens) を発行し、`gh auth login --with-token` に標準入力で渡してから `gh auth setup-git` を実行します。トークンは対象のリポジトリに限定し、権限は Contents と Pull requests の Read and write だけにして、有効期限を付けてください。`main` へのマージはブランチ保護で防ぎます。
 
 エージェントのツールの管理者用の設定（`envs/debian-pc/system/claude-code/`、`envs/debian-pc/system/opencode/`）は、bootstrap が `/etc/claude-code/` と `/etc/opencode/` に配置します。`agent` ユーザーの設定では上書きできません。
@@ -74,8 +74,22 @@ PC は `agent-box.local` という名前で LAN 内に公開されます。`~/.s
 Host agent-box
   HostName agent-box.local
   User owner
+  # OpenCode の Web UI（PC 内の 127.0.0.1:4096）を Mac の localhost:4096 に転送する
+  LocalForward 4096 127.0.0.1:4096
 ```
 再インストールすると SSH のホスト鍵が変わります。`ssh-keygen -R agent-box.local` で古い鍵を削除し、初回接続時に表示される fingerprint が、PC のログイン画面に表示される `SSH host key:` と一致することを確認してください。
+
+### ブラウザからエージェントを使う
+PC が起動すると、2 つのエージェントがサービスとして起動します。「エージェントの準備」が済んでいれば、PC にログインしなくてもブラウザから使えます。
+
+| | 使い方 | 仕組み |
+|---|---|---|
+| Claude Code | ブラウザで [claude.ai/code](https://claude.ai/code) を開き、`agent-box` を選びます。Claude アプリからも使えます | Remote Control（`agent-env-claude-remote.service`）。PC から Anthropic へ外向きに接続するので、PC 側でポートは開けません |
+| OpenCode | `ssh -N agent-box` を実行したまま、ブラウザで http://localhost:4096 を開きます。ユーザー名は `opencode`、パスワードは `ssh agent-box sudo cat /etc/agent-env/opencode-server.env` で確認します | `opencode serve`（`agent-env-opencode.service`）。PC 内（127.0.0.1）だけで待ち受け、SSH で転送します |
+
+どちらのセッションも `agent` ユーザーの `~/work` で始まります。リポジトリの clone や worktree の作成はエージェントに任せます。
+
+Claude Code の Remote Control は、Claude にログインすると自動で起動します（`agent-env-claude-remote.path`）。サービスの状態は `journalctl -u agent-env-claude-remote` と `journalctl -u agent-env-opencode` で確認できます。bootstrap は動作中のサービスを再起動しないので、ユニットの変更は PC の再起動か `sudo systemctl restart <ユニット名>` で反映してください。
 
 ## 更新
 ### Debian とツールの更新（自動）
