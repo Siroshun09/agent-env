@@ -41,29 +41,62 @@ jobs:
         run: |
           # ExecStart のパス（/opt/agent-env）をチェックアウト先に置き換えて検証する
           dir="$(mktemp -d)"
-          for f in system/*.service system/*.timer; do
+          for f in system/*.service; do
             sed "s|/opt/agent-env|${GITHUB_WORKSPACE}|g" "$f" > "${dir}/$(basename "$f")"
           done
           out="$(systemd-analyze verify "${dir}"/* 2>&1)"
           if [ -n "${out}" ]; then echo "${out}"; exit 1; fi
 
   bootstrap:
-    # Debian 13 コンテナで bootstrap を2回実行し、冪等に成功することを確認する
+    # Debian 13 コンテナで bootstrap を2回実行し、冪等に成功することを確認する。
+    # 続けて apply.sh（手動反映）が、非対話・不承認では何も変えず、承認したときだけ反映することを確認する。
     # （docker デーモンが必要なので ubuntu-slim は使えない）
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: |
-          docker run --rm -v "${GITHUB_WORKSPACE}:/opt/agent-env:ro" debian:trixie bash -euo pipefail -c '
-            /opt/agent-env/envs/debian-pc/bootstrap.sh
-            /opt/agent-env/envs/debian-pc/bootstrap.sh
-            id agent
-            grep "^agent:" /etc/subuid /etc/subgid
-            test -f /etc/apt/apt.conf.d/52agent-env-unattended-upgrades
-          '
+          docker run --rm -v "${GITHUB_WORKSPACE}:/src:ro" debian:trixie bash -euo pipefail -c "$(cat <<'EOF'
+          /src/envs/debian-pc/bootstrap.sh
+          /src/envs/debian-pc/bootstrap.sh
+          id agent
+          grep "^agent:" /etc/subuid /etc/subgid
+          test -f /etc/apt/apt.conf.d/52agent-env-unattended-upgrades
+
+          # apply.sh: GitHub の代わりにローカルの bare リポジトリを origin にする
+          git config --global user.name ci && git config --global user.email ci@example.invalid
+          git config --global init.defaultBranch main
+          cp -a /src /work && rm -rf /work/.git && git -C /work init -q && git -C /work add -A && git -C /work commit -qm base
+          git init -q --bare /remote.git && git -C /work push -q /remote.git main
+          git clone -q /remote.git /opt/agent-env
+          git -C /work commit -q --allow-empty -m next && git -C /work push -q /remote.git main
+          apply=/opt/agent-env/envs/debian-pc/apply.sh
+          base="$(git -C /opt/agent-env rev-parse HEAD)"
+          next="$(git -C /work rev-parse HEAD)"
+          export GIT_PAGER=cat
+          # 非対話: 失敗し、何も変えない
+          if "${apply}" < /dev/null; then exit 1; fi
+          test "$(git -C /opt/agent-env rev-parse HEAD)" = "${base}"
+          # 承認しない: 失敗し、何も変えない
+          if printf 'no\n' | script -qec "${apply}" /dev/null > out.txt; then exit 1; fi
+          grep -q "${next}" out.txt
+          test "$(git -C /opt/agent-env rev-parse HEAD)" = "${base}"
+          test ! -e /var/log/agent-env/apply.log
+          # 承認する: 反映して bootstrap を実行し、ログに残す
+          printf 'yes\n' | script -qec "${apply}" /dev/null
+          test "$(git -C /opt/agent-env rev-parse HEAD)" = "${next}"
+          grep -q "START ${base} -> ${next}" /var/log/agent-env/apply.log
+          grep -q "OK ${next}" /var/log/agent-env/apply.log
+          # bootstrap が失敗するコミット: 失敗として終了し、失敗したコミットをログに残す
+          echo no-such-package-agent-env >> /work/envs/debian-pc/packages.txt
+          git -C /work commit -qam broken && git -C /work push -q /remote.git main
+          broken="$(git -C /work rev-parse HEAD)"
+          if printf 'yes\n' | script -qec "${apply}" /dev/null; then exit 1; fi
+          grep -q "NG ${broken}" /var/log/agent-env/apply.log
+          EOF
+          )"
 
   build-iso:
     # Linux と macOS（bash 3.2・BSD 系コマンド）の両方で build-iso.sh が動くことを確認する。

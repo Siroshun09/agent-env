@@ -10,7 +10,7 @@
 | OS インストール、パーティション | Claude Code などエージェント本体 |
 | ユーザー分離（人間用 / `agent`） | 言語ツール（mise 等）とそのバージョン |
 | 基本パッケージ、podman | シェル設定、秘密情報の読み込み |
-| 自動更新（セキュリティパッチ、このリポジトリの反映） | エージェントの作業データ |
+| Debian のセキュリティ更新（自動）、このリポジトリの反映（手動） | エージェントの作業データ |
 
 `agent` には sudo が無いので、エージェントのツールが前提とする OS パッケージ（apt）は `envs/<name>/packages.txt` に追加する。
 
@@ -29,8 +29,8 @@ envs/<name>/            OS・環境ごと
     preseed.cfg         インストーラの応答（テンプレート）
     select-disk.sh      インストール先ディスクの選択画面
     late-command.sh     インストール直後の処理（リポジトリ配置、初回起動の設定）
-    bootstrap.sh        root 権限のセットアップ（初回起動時・毎日の更新で実行）
-    update.sh           リポジトリを pull して bootstrap を再実行
+    bootstrap.sh        root 権限のセットアップ（初回起動時と apply.sh から実行。冪等）
+    apply.sh            main の変更を確認・承認して手動で反映する
     packages.txt        基本パッケージ
     system/             systemd ユニット、apt 設定
 out/                    生成物（.gitignore）
@@ -58,7 +58,7 @@ CI はビルドが通ることの検査だけを行う。ISO にはパスワー�
    - 人間用ユーザー（sudo あり、既定名 `owner`）のパスワードはランダムに生成され、表示と `out/agent-env-debian-pc.password` への保存が行われる。ISO にはハッシュ（SHA-512 crypt）だけが入る。パスワードマネージャ等に保存したら、パスワードファイルは削除する。
    - `--user` で人間用ユーザーの名前を変えられる（`admin` は Debian の予約名で使えない）。
    - SSH 公開鍵（既定は `~/.ssh/id_ed25519.pub` → `id_ecdsa.pub` → `id_rsa.pub` の順に自動検出、`--ssh-key` で指定可）が人間用ユーザーに登録され、SSH のパスワードログインは無効になる。鍵が無ければ中断する（鍵なしで作るなら `--no-ssh-key`）。
-   - 本番用の ISO は、GitHub の `main` と同じコミットをチェックアウトしているときだけ作れる（インストール後の自動更新が `main` を追従するため）。検証用に別ブランチや未 push のコミットから作るには `--allow-non-main` が必要で、`main` 以外から作った PC の自動更新は停止する。
+   - 本番用の ISO は、GitHub の `main` と同じコミットをチェックアウトしているときだけ作れる（インストール後に反映できるのは `main` だけのため）。検証用に別ブランチや未 push のコミットから作るには `--allow-non-main` が必要で、`main` 以外から作った PC では `apply.sh` による反映はできない。
    - ISO には commit 済みの内容が入る（未コミットの変更があると中断する）。
 2. ISO を USB メモリに書き込む（書き込み先を取り違えないよう、リムーバブルドライブだけを表示するツールを推奨）。
 3. PC を USB から起動し、メニュー先頭の `agent-env: Automated install (ERASES DISK)` で Enter を押す。
@@ -83,21 +83,29 @@ ssh agent-box
 - 再インストールするとホスト鍵が変わる。`ssh-keygen -R agent-box.local` で古い鍵を消し、初回接続時に表示される fingerprint を PC のコンソール（ログイン画面に `SSH host key:` として表示される）と照合する。
 - エージェントとして作業するときは `ssh agent-box` 後に `sudo -iu agent`。
 
-#### 運用（自動更新）
+#### 運用（更新と反映）
 | 対象 | 仕組み | タイミング |
 |---|---|---|
-| Debian のセキュリティ更新・安定版更新 | `unattended-upgrades` | 毎日。再起動が必要なら 04:30 に自動再起動 |
-| このリポジトリの変更（パッケージ・設定） | `agent-env-update.timer` が `main` を pull して bootstrap を再実行。bootstrap が失敗したら更新前のコミットに戻す | 毎日 03:00 頃（初回セットアップ完了後） |
+| Debian のセキュリティ更新・安定版更新 | `unattended-upgrades` | 自動（毎日）。再起動が必要なら 04:30 に自動再起動 |
+| このリポジトリの変更（パッケージ・設定） | 管理者が `apply.sh` を実行して反映 | 手動のみ |
 
-パッケージや設定を変えるときは、このリポジトリに PR を出してマージするだけでよい。すぐ反映したい場合:
+`main` へのマージだけでは PC は変わらない。PC への反映は、管理者が内容を確認して承認する最終ステップとして分けている。
 ```bash
-sudo systemctl start agent-env-update
+ssh -t agent-box sudo /opt/agent-env/envs/debian-pc/apply.sh
 ```
-`main` 以外がチェックアウトされているときは切り替えずに停止する。初回セットアップ・更新・手動の bootstrap はロックで排他され、同時には動かない。
+1. GitHub から `main` を取得し、現在と反映先のコミット SHA、コミット一覧、差分を表示する。
+2. `yes` と入力したときだけ fast-forward して bootstrap を root で実行する。それ以外の入力や、端末を伴わない実行（`ssh agent-box sudo ...` のように `-t` なし、cron 等）では何も変更せずに終了する。
+3. 新しいコミットが無い場合も、承認すれば現在のコミットで bootstrap を再実行する。
 
-`main` へのマージは root 権限でこの PC に適用されるので、`main` にはブランチ保護と必須チェックを設定しておく。
+- 反映できるのは `main` だけ。未コミットの変更がある場合や、`main` の履歴が書き換えられて fast-forward できない場合は中断する。
+- 初回セットアップ（`agent-env-firstboot`）の実行中・再試行待ちの間は実行できない。
+- root 専用。`agent` には sudo が無いので反映できない。
+- 反映前後のコミット SHA、承認したユーザー、bootstrap の出力と結果を `/var/log/agent-env/apply.log` に記録する（`grep -E ' (START|OK|NG) ' /var/log/agent-env/apply.log` で履歴を確認できる）。
 
-状況確認は `journalctl -u agent-env-update` / `systemctl list-timers agent-env-update`。失敗は `systemctl --failed` に出る。
+bootstrap が失敗した場合は失敗として終了し、自動では元に戻さない（OS 設定の完全なロールバックは保証できないため）。リポジトリは失敗したコミットのまま残るので、`git -C /opt/agent-env log -1` とログで原因を確認し、修正（または revert）を `main` にマージしてから再度 `apply.sh` を実行する。一時的な失敗なら、そのまま再実行すればよい（bootstrap は冪等）。
+
+`main` にはブランチ保護と必須チェックを設定しておく。
+
 自動再起動を止めたい場合は `envs/debian-pc/system/apt/52agent-env-unattended-upgrades` の `Automatic-Reboot` を `false` にする。
 
 Debian ISO のバージョンは `envs/debian-pc/iso.conf` で固定している。

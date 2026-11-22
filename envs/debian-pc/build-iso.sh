@@ -8,7 +8,7 @@
 #   --no-ssh-key      鍵を登録しない（SSH はパスワードでログインする）。どちらかの指定が必須。
 #   --user            人間用ユーザー（sudo あり）の名前。既定は owner。root や admin などの予約名は使えない。
 #   --allow-non-main  検証用。main 以外のブランチや、GitHub の main と一致しないコミットからも作れる。
-#                     main 以外から作った PC では、インストール後の自動更新は停止する。
+#                     main 以外から作った PC では、apply.sh による反映はできない。
 # 必要なもの: git, curl, xorriso, cpio, gzip, openssl（passwd -6 対応のもの。macOS 標準の LibreSSL は不可）
 #   macOS: brew install xorriso openssl（または build-iso-in-container.sh を使う）
 set -euo pipefail
@@ -67,7 +67,7 @@ BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 [[ "${BRANCH}" != HEAD ]] || die "ブランチをチェックアウトしてください（detached HEAD）"
 # ブランチ名はインストーラが読む build.env に書くので、シェルで特別な意味を持つ文字を許さない
 [[ "${BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] || die "ブランチ名に使えない文字が含まれています: ${BRANCH}"
-# インストール後の自動更新は main を追従する。main 以外から作ると自動更新が止まるので明示を求める
+# インストール後に apply.sh で反映できるのは main だけ。main 以外から作ると反映できないので明示を求める
 [[ "${BRANCH}" == main || "${ALLOW_NON_MAIN}" -eq 1 ]] ||
   die "main 以外のブランチ（${BRANCH}）です。検証用に作る場合は --allow-non-main を付けてください"
 # 本番用は GitHub の main と同じコミットであること（未 push のコミットを入れない）

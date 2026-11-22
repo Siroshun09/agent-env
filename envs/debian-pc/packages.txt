@@ -22,5 +22,5 @@ passt
 # Mac などからのリモート管理（ssh owner@agent-box.local）
 openssh-server
 avahi-daemon
-# 自動更新
+# Debian のセキュリティ更新の自動適用
 unattended-upgrades
