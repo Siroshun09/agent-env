@@ -8,7 +8,6 @@ for dir in "$HOME/.local/share/mise/shims" "$HOME/.local/bin"; do
   esac
 done
 export PATH
-export DISABLE_AUTOUPDATER=1
 # 秘密情報（ANTHROPIC_API_KEY, GH_TOKEN など）は ~/.secrets/env に KEY=value 形式で置く
 if [ -f "$HOME/.secrets/env" ]; then
   set -a

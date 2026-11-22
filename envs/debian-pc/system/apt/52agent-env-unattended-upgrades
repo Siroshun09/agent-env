@@ -1,0 +1,19 @@
+// bootstrap.sh が /etc/apt/apt.conf.d/ に配置する。手で編集せずリポジトリ側を直すこと。
+// Debian のセキュリティ更新・安定版の更新を毎日自動で適用する（対象は Debian 既定の 50unattended-upgrades）。
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";
+
+// mise の apt リポジトリも自動更新の対象に加える
+Unattended-Upgrade::Origins-Pattern {
+  "site=mise.jdx.dev";
+};
+
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+
+// カーネル等の更新で再起動が必要になったら、深夜に自動で再起動する。
+// 長時間のエージェント作業を止めたくない場合は "false" にして手動で再起動する。
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-WithUsers "true";
+Unattended-Upgrade::Automatic-Reboot-Time "04:30";

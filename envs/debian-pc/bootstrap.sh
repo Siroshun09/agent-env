@@ -44,5 +44,19 @@ for f in /etc/subuid /etc/subgid; do
   fi
 done
 
+log "自動更新"
+# セキュリティ更新は unattended-upgrades、このリポジトリの変更は agent-env-update.timer（毎日）で反映する
+install -m 0644 "${ENV_DIR}/system/apt/52agent-env-unattended-upgrades" /etc/apt/apt.conf.d/
+if command -v systemctl >/dev/null 2>&1; then
+  install -m 0644 "${ENV_DIR}/system/agent-env-update.service" "${ENV_DIR}/system/agent-env-update.timer" \
+    /etc/systemd/system/
+  if [[ -d /run/systemd/system ]]; then
+    systemctl daemon-reload
+    systemctl enable --now agent-env-update.timer
+  else
+    systemctl enable agent-env-update.timer # chroot 等、systemd が動いていない場合
+  fi
+fi
+
 # ここから先は OS 非依存（エージェント用ユーザー権限）
 runuser -l "${AGENT_USER}" -c "bash '${REPO_ROOT}/shared/setup-user.sh'"

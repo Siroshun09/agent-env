@@ -15,7 +15,7 @@ in-target git -C /opt/agent-env remote set-url origin "${REPO_URL}"
 rm -f /target/tmp/agent-env.bundle
 
 # 初回起動時に bootstrap を実行する
-cp /target/opt/agent-env/envs/debian-pc/agent-env-firstboot.service /target/etc/systemd/system/
+cp /target/opt/agent-env/envs/debian-pc/system/agent-env-firstboot.service /target/etc/systemd/system/
 in-target systemctl enable agent-env-firstboot.service
 [ -L /target/etc/systemd/system/multi-user.target.wants/agent-env-firstboot.service ]
 

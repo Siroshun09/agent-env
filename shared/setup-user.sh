@@ -5,7 +5,6 @@
 set -euo pipefail
 
 SHARED_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CLAUDE_VERSION="$(cat "${SHARED_DIR}/claude-version")"
 
 log() { printf '\n==> %s\n' "$*"; }
 ensure_line() { # ensure_line <file> <line>
@@ -30,10 +29,13 @@ log "ツールチェーン (mise)"
 mise trust --all >/dev/null 2>&1 || true
 mise install --yes
 
-log "Claude Code ${CLAUDE_VERSION}"
-# 公式ネイティブインストーラでバージョン固定。自動更新は DISABLE_AUTOUPDATER で無効化。
-if ! "${HOME}/.local/bin/claude" --version 2>/dev/null | grep -qF "${CLAUDE_VERSION}"; then
-  curl -fsSL https://claude.ai/install.sh | bash -s "${CLAUDE_VERSION}"
+log "Claude Code"
+# 公式ネイティブインストーラで最新版を入れる。以後は Claude Code 自身の自動更新に任せるが、
+# 使われていない間も古くならないよう、ここ（定期実行される）でも更新する。
+if [[ -x "${HOME}/.local/bin/claude" ]]; then
+  "${HOME}/.local/bin/claude" update
+else
+  curl -fsSL https://claude.ai/install.sh | bash
 fi
 
 log "作業ディレクトリ"

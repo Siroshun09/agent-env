@@ -1,0 +1,12 @@
+# リポジトリを最新化して bootstrap を再実行する。agent-env-update.timer から毎日起動される。
+# 手動実行: sudo systemctl start agent-env-update / 状況確認: journalctl -u agent-env-update
+[Unit]
+Description=agent-env daily update
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# 追従するブランチ。変える場合は systemctl edit agent-env-update で上書きする。
+Environment=AGENT_ENV_BRANCH=main
+ExecStart=/opt/agent-env/envs/debian-pc/update.sh
