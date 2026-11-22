@@ -68,7 +68,7 @@ jobs:
           # apply.sh: GitHub の代わりにローカルの bare リポジトリを origin にする
           git config --global user.name ci && git config --global user.email ci@example.invalid
           git config --global init.defaultBranch main
-          cp -a /src /work && rm -rf /work/.git && git -C /work init -q && git -C /work add -A && git -C /work commit -qm base
+          cp -r /src /work && rm -rf /work/.git && git -C /work init -q && git -C /work add -A && git -C /work commit -qm base
           git init -q --bare /remote.git && git -C /work push -q /remote.git main
           git clone -q /remote.git /opt/agent-env
           git -C /work commit -q --allow-empty -m next && git -C /work push -q /remote.git main
