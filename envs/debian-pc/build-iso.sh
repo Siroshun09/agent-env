@@ -139,9 +139,9 @@ xorriso -indev "${BASE_ISO}" -outdev "${OUT_ISO}" \
   -map "${WORK}/extra" /agent-env \
   -boot_image any replay 2>/dev/null
 
-log "完了: ${OUT_ISO}"
+log "完了: out/$(basename "${OUT_ISO}")"
 echo "ユーザー:   ${HUMAN_USER}"
-echo "パスワード: ${PASSWORD}  （${OUT_PASSWORD} にも保存）"
+echo "パスワード: ${PASSWORD}  （out/$(basename "${OUT_PASSWORD}") にも保存）"
 echo
 echo "USB メモリに書き込み、起動メニューで Enter を押すとインストールが始まります。"
 echo "インストール中に聞かれるのはインストール先ディスクだけです。"
