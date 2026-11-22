@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # Debian 13 (trixie) の実 PC をエージェント専用ホストに仕立てる。冪等なので何度実行してもよい。
-# 使い方: sudo envs/debian-pc/bootstrap.sh   （preseed の late_command からも呼ぶ）
+# 初回起動時（agent-env-firstboot.service）と毎日の更新（agent-env-update.service）から実行される。
+# 手動実行: sudo /opt/agent-env/envs/debian-pc/bootstrap.sh
+#
+# 責務は PC 側（OS パッケージ・ユーザー・自動更新）まで。
+# agent ユーザーのホーム以下（Claude Code、言語ツール、シェル設定、秘密情報）は別リポジトリで管理する。
 set -euo pipefail
 
 ENV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${ENV_DIR}/../.." && pwd)"
 AGENT_USER="${AGENT_USER:-agent}"
 
 log() { printf '\n==> %s\n' "$*"; }
@@ -17,22 +20,11 @@ apt-get update -q
 mapfile -t PKGS < <(sed -e 's/#.*//' -e '/^\s*$/d' "${ENV_DIR}/packages.txt")
 apt-get install -y -q --no-install-recommends "${PKGS[@]}"
 
-log "mise"
-# apt の公式リポジトリから入れると更新・削除が apt で管理できる
-if ! command -v mise >/dev/null 2>&1; then
-  install -d -m 0755 /etc/apt/keyrings
-  curl -fsSL https://mise.jdx.dev/gpg-key.pub | gpg --dearmor --yes -o /etc/apt/keyrings/mise.gpg
-  echo "deb [signed-by=/etc/apt/keyrings/mise.gpg arch=$(dpkg --print-architecture)] https://mise.jdx.dev/deb stable main" \
-    > /etc/apt/sources.list.d/mise.list
-  apt-get update -q
-  apt-get install -y -q mise
-fi
-
 log "エージェント用ユーザー: ${AGENT_USER}"
 if ! id "${AGENT_USER}" >/dev/null 2>&1; then
   useradd --create-home --shell /bin/bash "${AGENT_USER}"
 fi
-# sudo は付与しない。root が必要な変更はこのスクリプトに書く。
+# sudo は付与しない。root が必要なもの（apt パッケージ等）はこのリポジトリに書く。
 
 # rootless podman 用の subuid/subgid。uidmap があれば useradd が割り当てるが、
 # uidmap より先にユーザーを作った場合などに備えて、無ければ既存範囲の後ろに追加する。
@@ -58,5 +50,4 @@ if command -v systemctl >/dev/null 2>&1; then
   fi
 fi
 
-# ここから先は OS 非依存（エージェント用ユーザー権限）
-runuser -l "${AGENT_USER}" -c "bash '${REPO_ROOT}/shared/setup-user.sh'"
+log "完了"

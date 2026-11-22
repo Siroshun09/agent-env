@@ -121,7 +121,7 @@ EOF
 grep -qx 'timeout 0' "${WORK}/isolinux.cfg.new" || die "isolinux.cfg が無期限待機になっていません"
 
 git bundle create "${WORK}/extra/repo.bundle" "${BRANCH}" 2>/dev/null
-cp "${ENV_DIR}/late-command.sh" "${WORK}/extra/late-command.sh"
+cp "${ENV_DIR}/late-command.sh" "${ENV_DIR}/select-disk.sh" "${WORK}/extra/"
 cat > "${WORK}/extra/build.env" <<EOF
 HUMAN_USER='${HUMAN_USER}'
 REPO_URL='${REPO_URL}'

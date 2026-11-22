@@ -4,11 +4,6 @@ APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::AutocleanInterval "7";
 
-// mise の apt リポジトリも自動更新の対象に加える
-Unattended-Upgrade::Origins-Pattern {
-  "site=mise.jdx.dev";
-};
-
 Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
 Unattended-Upgrade::Remove-Unused-Dependencies "true";
 

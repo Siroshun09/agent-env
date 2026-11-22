@@ -1,9 +1,0 @@
-# shared/setup-user.sh が配置する。手で編集せずリポジトリ側を直すこと。
-# 対話シェル用（bash / zsh 共通）。環境変数は ~/.agentenv にまとめている。
-[ -f "$HOME/.agentenv" ] && . "$HOME/.agentenv"
-if [ -n "${ZSH_VERSION:-}" ]; then
-  eval "$(mise activate zsh)"
-elif [ -n "${BASH_VERSION:-}" ]; then
-  eval "$(mise activate bash)"
-fi
-cd "$HOME/work" 2>/dev/null || true
