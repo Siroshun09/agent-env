@@ -161,7 +161,7 @@ jobs:
             test -z "$(git config --global --get-regexp "^credential\." || true)"
           '
           # エージェントへの指示。OpenCode は instructions で同じファイルを読む。詳細のファイルを指していること
-          cmp /src/envs/debian-pc/system/agents/CLAUDE.md /etc/claude-code/CLAUDE.md
+          cmp /src/envs/debian-pc/system/agents/instructions.md /etc/claude-code/CLAUDE.md
           cmp /src/envs/debian-pc/system/agents/local-llm.md /etc/agent-env/local-llm.md
           grep -q "/etc/agent-env/local-llm.md" /etc/claude-code/CLAUDE.md
           grep -q '"instructions": \["/etc/claude-code/CLAUDE.md"\]' /etc/opencode/opencode.jsonc
