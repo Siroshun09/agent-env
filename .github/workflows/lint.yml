@@ -1,0 +1,54 @@
+# リポジトリ全体の静的検査（環境を問わないもの）。環境ごとの検査は env-<name>.yml に置く。
+name: lint
+
+on:
+  pull_request:
+    paths:
+      - "**.sh"
+      - ".github/workflows/**"
+  push:
+    branches: [main]
+    paths:
+      - "**.sh"
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ACTIONLINT_VERSION: 1.7.12
+  ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+  ZIZMOR_VERSION: 1.32.0
+
+jobs:
+  shellcheck:
+    # shellcheck はプリインストール済みなので軽量 runner で足りる
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: git ls-files -z '*.sh' | xargs -0 shellcheck
+
+  workflows:
+    # actionlint（構文・型、run: 内は shellcheck）と zizmor（セキュリティ）
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: actionlint
+        run: |
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
+          echo "${ACTIONLINT_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "${tarball}" actionlint
+          ./actionlint
+      - name: zizmor
+        run: pipx run "zizmor==${ZIZMOR_VERSION}" --offline --format=github .github/workflows/

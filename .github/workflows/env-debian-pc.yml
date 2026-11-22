@@ -1,62 +1,47 @@
-# 検査専用。ISO はパスワードを含むため、成果物としてアップロードしない。
-name: check
+# envs/debian-pc の検査。ISO はパスワードを含むため、成果物としてアップロードしない。
+# 環境を追加するときは、このファイルを複製して env-<name>.yml を作り、paths と中身を書き換える。
+name: env/debian-pc
 
 on:
   pull_request:
+    paths:
+      - "envs/debian-pc/**"
+      - ".github/workflows/env-debian-pc.yml"
   push:
     branches: [main]
+    paths:
+      - "envs/debian-pc/**"
+      - ".github/workflows/env-debian-pc.yml"
 
 permissions:
   contents: read
 
-env:
-  ACTIONLINT_VERSION: 1.7.12
-  ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
-  ZIZMOR_VERSION: 1.32.0
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: envs/debian-pc
 
 jobs:
-  shellcheck:
-    # shellcheck はプリインストール済みなので軽量 runner で足りる
-    runs-on: ubuntu-slim
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - run: shellcheck envs/*/*.sh
-
-  workflows:
-    # actionlint（構文・型、run: 内は shellcheck）と zizmor（セキュリティ）
-    runs-on: ubuntu-slim
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: actionlint
-        run: |
-          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
-          echo "${ACTIONLINT_SHA256}  ${tarball}" | sha256sum -c -
-          tar -xzf "${tarball}" actionlint
-          ./actionlint
-      - name: zizmor
-        run: pipx run "zizmor==${ZIZMOR_VERSION}" --offline --format=github .github/workflows/
-
   config:
     # preseed の書式と systemd ユニットの検証。どちらも警告は出すが失敗にしないので、出力があれば失敗とする
     runs-on: ubuntu-slim
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: preseed
         run: |
-          out="$(debconf-set-selections --checkonly envs/debian-pc/preseed.cfg 2>&1)"
+          out="$(debconf-set-selections --checkonly preseed.cfg 2>&1)"
           if [ -n "${out}" ]; then echo "${out}"; exit 1; fi
       - name: systemd units
         run: |
           # ExecStart のパス（/opt/agent-env）をチェックアウト先に置き換えて検証する
           dir="$(mktemp -d)"
-          for f in envs/debian-pc/system/*.service envs/debian-pc/system/*.timer; do
+          for f in system/*.service system/*.timer; do
             sed "s|/opt/agent-env|${GITHUB_WORKSPACE}|g" "$f" > "${dir}/$(basename "$f")"
           done
           out="$(systemd-analyze verify "${dir}"/* 2>&1)"
@@ -66,12 +51,13 @@ jobs:
     # Debian 13 コンテナで bootstrap を2回実行し、冪等に成功することを確認する
     # （docker デーモンが必要なので ubuntu-slim は使えない）
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: |
-          docker run --rm -v "$PWD:/opt/agent-env:ro" debian:trixie bash -euo pipefail -c '
+          docker run --rm -v "${GITHUB_WORKSPACE}:/opt/agent-env:ro" debian:trixie bash -euo pipefail -c '
             /opt/agent-env/envs/debian-pc/bootstrap.sh
             /opt/agent-env/envs/debian-pc/bootstrap.sh
             id agent
@@ -88,6 +74,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -108,8 +95,9 @@ jobs:
           # PR では detached HEAD になるので、ブランチを作ってからビルドする
           # ログ（パスワードを含む）はリポジトリ外に置く。リポジトリ内だと未コミットの変更とみなされる
           git checkout -q -B ci-build
-          envs/debian-pc/build-iso.sh > "${RUNNER_TEMP}/build.log"
-      - run: envs/debian-pc/verify-iso.sh
+          ./build-iso.sh > "${RUNNER_TEMP}/build.log"
+      - run: ./verify-iso.sh
       - name: remove ISO (contains a password)
         if: always()
+        working-directory: .
         run: rm -rf out "${RUNNER_TEMP}/build.log"

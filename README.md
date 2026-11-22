@@ -34,12 +34,14 @@ envs/<name>/            OS・環境ごと
     packages.txt        基本パッケージ
     system/             systemd ユニット、apt 設定
 out/                    生成物（.gitignore）
-.github/workflows/      CI（shellcheck、ワークフロー・設定ファイル検査、bootstrap の冪等性、Linux/macOS での ISO ビルド）
+.github/workflows/
+  lint.yml              リポジトリ全体の静的検査（shellcheck、actionlint、zizmor）
+  env-<name>.yml        環境ごとの検査（envs/<name>/ の変更時に実行）
 ```
 
 CI はビルドが通ることの検査だけを行う。ISO はパスワードを含むため、成果物としては公開しない。
 
-新しい OS・環境は `envs/<name>/` を追加する。
+新しい OS・環境は `envs/<name>/` と、その検査用の `.github/workflows/env-<name>.yml` を追加する。
 
 ## 環境
 
