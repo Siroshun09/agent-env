@@ -72,6 +72,25 @@ jobs:
           # エージェントのツール
           claude --version && opencode --version && mise --version && gh --version
           test -f /etc/claude-code/managed-settings.json && test -f /etc/opencode/opencode.jsonc
+          # GitHub のトークンの使い分け: git は URL の持ち主、gh は origin の持ち主のトークンを使う
+          test "$(command -v gh)" = /usr/local/bin/gh
+          su - agent -c '
+            set -eu
+            echo tok-alice | agent-env-github-token set Alice
+            echo tok-org | agent-env-github-token set my-org
+            test "$(stat -c %a ~/.config/agent-env/github-tokens ~/.config/agent-env/github-tokens/alice | tr "\n" " ")" = "700 600 "
+            cred() { printf "protocol=https\nhost=github.com\npath=%s\n\n" "$1" | GIT_TERMINAL_PROMPT=0 git credential fill | sed -n "s/^password=//p"; }
+            test "$(cred alice/repo.git)" = tok-alice
+            test "$(cred My-Org/repo.git)" = tok-org
+            test -z "$(cred unknown/repo.git)"
+            r="$(mktemp -d)" && cd "${r}" && git init -q
+            git remote add origin https://github.com/my-org/repo.git
+            test "$(gh auth token)" = tok-org
+            git remote set-url origin git@github.com:Alice/repo.git
+            test "$(gh auth token)" = tok-alice
+            # 持ち主がわからず、トークンが複数ある場合は使わない
+            cd / && if gh auth token; then exit 1; fi
+          '
           # 管理者用の設定は agent ユーザーの設定（ユーザー単位・プロジェクト単位）より優先される
           su - agent -c "claude update" 2>&1 | grep -q "disabled by your administrator"
           su - agent -c '

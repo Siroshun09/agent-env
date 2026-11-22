@@ -61,6 +61,15 @@ install -m 0644 "${ENV_DIR}/system/claude-code/managed-settings.json" /etc/claud
 install -m 0644 "${ENV_DIR}/system/opencode/opencode.jsonc" /etc/opencode/
 install -m 0644 "${ENV_DIR}/system/profile.d/agent-env-mise.sh" /etc/profile.d/
 
+log "GitHub のトークンの使い分け（持ち主ごとの fine-grained PAT）"
+# git はリモートの URL の持ち主、gh は操作対象のリポジトリの持ち主で、トークンを選ぶ。
+# トークン自体は agent ユーザーが agent-env-github-token set <owner> で保存する（リポジトリにも ISO にも入らない）
+install -m 0755 "${ENV_DIR}/system/github/agent-env-github-token.sh" /usr/local/bin/agent-env-github-token
+install -m 0755 "${ENV_DIR}/system/github/git-credential-agent-env.sh" /usr/local/bin/git-credential-agent-env
+install -m 0755 "${ENV_DIR}/system/github/gh.sh" /usr/local/bin/gh
+git config --system --replace-all credential.https://github.com.helper agent-env
+git config --system credential.https://github.com.useHttpPath true
+
 log "NVIDIA ドライバー（NVIDIA の GPU がある場合だけ）"
 # DKMS でビルドするオープン版のカーネルモジュールと、計算用（CUDA）のライブラリだけを入れる（画面表示用は入れない）。
 # ドライバーのブランチは nvidia-driver-pinning-* で固定し、上げるときはここを書き換える
