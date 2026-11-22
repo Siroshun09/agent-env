@@ -102,6 +102,23 @@ jobs:
             test "$(gh auth token)" = tok-org
             git config remote.origin.gh-resolved base
             test "$(gh auth token)" = tok-alice
+            # 引数で指定したリポジトリは、GH_REPO やリモートより優先する（通信しないよう、実行する gh を差し替えて確認する）
+            printf "#!/bin/sh\necho \"\${GH_TOKEN:-none}\"\n" > ~/fake-gh && chmod +x ~/fake-gh
+            sed "s|^real=.*|real=${HOME}/fake-gh|" /usr/local/bin/gh > ~/gh-test && chmod +x ~/gh-test
+            t() { test "$(~/gh-test "$@" 2>/dev/null)" = "${want}"; }
+            want=tok-org && GH_REPO=Alice/repo t repo view my-org/repo
+            GH_REPO=Alice/repo t api repos/my-org/repo
+            GH_REPO=Alice/repo t api -X GET orgs/my-org/repos
+            t repo list --limit 10 my-org
+            t repo clone -u up my-org/repo -- --depth 1
+            want=tok-alice && GH_REPO=Alice/repo t repo view
+            GH_REPO=Alice/repo t api "repos/{owner}/{repo}"
+            # upstream、github、origin 以外のリモートも、github.com を指す最初のものを使う
+            git config --unset remote.origin.gh-resolved
+            git remote remove origin && git remote set-url upstream https://gitlab.com/x/y.git
+            git remote add work https://github.com/my-org/repo.git
+            want=tok-org && t pr list
+            rm ~/fake-gh ~/gh-test
             # 持ち主がわからず、トークンが複数ある場合は、gh に保存済みの認証情報も使わない
             mkdir -p ~/.config/gh && printf "github.com:\n    oauth_token: stale\n    user: x\n" > ~/.config/gh/hosts.yml
             cd / && if gh auth token; then exit 1; fi

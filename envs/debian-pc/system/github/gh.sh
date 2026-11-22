@@ -3,11 +3,11 @@
 # GH_TOKEN に設定して /usr/bin/gh を実行する。bootstrap.sh が /usr/local/bin/gh に配置する。
 # 持ち主は次の順に判断する（-R / --repo を指定した場合は、それだけで判断する）。
 #   1. -R / --repo の値
-#   2. 環境変数 GH_REPO
-#   3. gh repo <サブコマンド> <owner>/<repo>、gh repo list <owner> の引数、gh api の repos/<owner>/... のパス
-#      （gh api の {owner} のようなプレースホルダーは、次の 4 で解決する）
+#   2. gh repo <サブコマンド> <owner>/<repo>、gh repo list <owner> の引数、gh api の repos/<owner>/... と
+#      orgs/<owner>/... のパス（オプションとその値は飛ばす。{owner} のようなプレースホルダーは 4 以降で解決する）
+#   3. 環境変数 GH_REPO
 #   4. 今いる git リポジトリのリモート。gh repo set-default の設定があればそのリポジトリ、
-#      無ければ gh と同じく upstream、github、origin の順
+#      無ければ gh と同じく upstream、github、origin、その他のリモートの順で、github.com を指す最初のもの
 #   5. トークンが 1 つしか無ければ、その持ち主
 # トークンが見つからない場合は、gh に保存済みの認証情報（以前の gh auth login など）も使わせない。
 # 別の持ち主のトークンや古い認証情報が使われないようにするため。
@@ -45,6 +45,38 @@ owner_of() {
   esac
 }
 
+# 値を取るオプション（gh repo と gh api のもの）。引数の位置を数えるときに、その値を飛ばす
+takes_value() {
+  case "$1" in
+    -L | --limit | -l | --language | --topic | --visibility | --json | -q | --jq | -t | --template | \
+      -b | --branch | -u | --upstream-remote-name | --remote-name | --org | --source | --remote | \
+      -d | --description | -h | --homepage | -g | --gitignore | --license | -p | --default-branch | \
+      --add-topic | --remove-topic | -X | --method | -F | --field | -f | --raw-field | -H | --header | \
+      --input | --cache | --preview | --hostname) return 0 ;;
+  esac
+  return 1
+}
+
+# $1 個のコマンド名を飛ばし、オプションとその値を除いた最初の引数を出力する。無ければ失敗
+first_arg() {
+  n="$1"
+  shift
+  shift "${n}"
+  skip=""
+  for a in "$@"; do
+    if [ -n "${skip}" ]; then
+      skip=""
+      continue
+    fi
+    case "${a}" in
+      --) return 1 ;; # gh repo clone の git に渡す引数など
+      -*) takes_value "${a}" && skip=1 ;; # --limit=10 のような形は値を含むので飛ばさない
+      *) printf '%s' "${a}" && return 0 ;;
+    esac
+  done
+  return 1
+}
+
 owner=""
 
 # 1. -R / --repo（指定した場合は、ほかの方法で推測しない）
@@ -67,34 +99,35 @@ done
 if [ -n "${explicit}" ]; then
   owner="$(owner_of "${repo_arg}")" || owner=""
 else
-  # 2. GH_REPO
-  if [ -n "${GH_REPO:-}" ]; then
-    owner="$(owner_of "${GH_REPO}")" || owner=""
-  fi
-
-  # 3. gh repo <サブコマンド> <owner>/<repo>、gh repo list <owner>、gh api repos/<owner>/...
-  if [ -z "${owner}" ] && [ $# -ge 3 ] && [ "$1" = repo ]; then
-    case "$2 $3" in
-      *" -"* | *"{"*) ;;
-      "list "* | "ls "*) owner="$3" ;;
-      *" "*/*) owner="$(owner_of "$3")" || owner="" ;;
+  # 2. gh repo <サブコマンド> <owner>/<repo>、gh repo list <owner>、gh api repos/<owner>/... と orgs/<owner>/...
+  if [ "${1:-}" = repo ] && [ $# -ge 3 ] && arg="$(first_arg 2 "$@")"; then
+    case "$2 ${arg}" in
+      *"{"*) ;;
+      "list "* | "ls "*)
+        case "${arg}" in
+          *[!A-Za-z0-9-]*) ;;
+          *) owner="${arg}" ;;
+        esac
+        ;;
+      *) owner="$(owner_of "${arg}")" || owner="" ;;
+    esac
+  elif [ "${1:-}" = api ] && arg="$(first_arg 1 "$@")"; then
+    arg="${arg#/}"
+    case "${arg}" in
+      repos/?*/* | orgs/?*)
+        arg="${arg#*/}"
+        arg="${arg%%/*}"
+        case "${arg}" in
+          *"{"*) ;; # {owner} などのプレースホルダー
+          *) owner="${arg}" ;;
+        esac
+        ;;
     esac
   fi
-  if [ -z "${owner}" ] && [ $# -ge 2 ] && [ "$1" = api ]; then
-    for a in "$@"; do
-      case "${a}" in
-        repos/*/* | /repos/*/*)
-          a="${a#/}"
-          a="${a#repos/}"
-          a="${a%%/*}"
-          case "${a}" in
-            *"{"*) ;; # {owner} などのプレースホルダー
-            *) owner="${a}" ;;
-          esac
-          break
-          ;;
-      esac
-    done
+
+  # 3. GH_REPO（明示的な操作対象が無い場合だけ）
+  if [ -z "${owner}" ] && [ -n "${GH_REPO:-}" ]; then
+    owner="$(owner_of "${GH_REPO}")" || owner=""
   fi
 
   # 4. 今いる git リポジトリのリモート
@@ -112,11 +145,13 @@ else
       else
         owner="$(owner_of "${value}")" || owner=""
       fi
-    else
-      for remote in upstream github origin; do
+    fi
+    if [ -z "${owner}" ]; then
+      # shellcheck disable=SC2046 # リモート名は空白を含まない
+      for remote in upstream github origin $(git remote 2>/dev/null); do
         url="$(git remote get-url "${remote}" 2>/dev/null)" || continue
-        owner="$(owner_of "${url}")" || owner=""
-        break
+        owner="$(owner_of "${url}")" && break
+        owner=""
       done
     fi
   fi
