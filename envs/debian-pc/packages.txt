@@ -19,5 +19,8 @@ python3
 podman
 uidmap
 passt
+# Mac などからのリモート管理（ssh owner@agent-box.local）
+openssh-server
+avahi-daemon
 # 自動更新
 unattended-upgrades

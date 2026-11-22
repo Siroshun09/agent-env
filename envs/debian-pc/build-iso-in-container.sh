@@ -5,6 +5,8 @@
 #
 # 使い方: envs/debian-pc/build-iso-in-container.sh [build-iso.sh の引数...]
 #   例: envs/debian-pc/build-iso-in-container.sh --ssh-key ~/.ssh/id_ed25519.pub
+#   --ssh-key を省略すると ~/.ssh/id_ed25519.pub, id_ecdsa.pub, id_rsa.pub の順に探して使う。
+#   見つからなければ中断する（SSH 鍵なしで作る場合は --no-ssh-key）。
 #   AGENT_ENV_CONTAINER_ARGS で run に引数を追加できる（プロキシ設定など）。
 #
 # ランタイム間の差を避けるため、使うのは --rm / -t / -e / -v <ディレクトリ>:<パス> だけにしている。
@@ -31,16 +33,28 @@ echo "コンテナランタイム: ${RUNTIME}"
 
 # --ssh-key はホストのファイルなので、中身を環境変数で渡してコンテナ内で書き出す
 ARGS=()
-SSH_KEY_CONTENT=""
+SSH_KEY=""
+NO_SSH_KEY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --ssh-key)
-      [[ -f "$2" ]] || die "公開鍵が見つかりません: $2"
-      SSH_KEY_CONTENT="$(cat "$2")"
-      ARGS+=(--ssh-key /tmp/ssh-key.pub); shift 2 ;;
+    --ssh-key) SSH_KEY="$2"; shift 2 ;;
+    --no-ssh-key) NO_SSH_KEY=1; shift ;;
     *) ARGS+=("$1"); shift ;;
   esac
 done
+if [[ -z "${SSH_KEY}" && "${NO_SSH_KEY}" -eq 0 ]]; then
+  for k in id_ed25519.pub id_ecdsa.pub id_rsa.pub; do
+    [[ -f "${HOME}/.ssh/${k}" ]] && { SSH_KEY="${HOME}/.ssh/${k}"; break; }
+  done
+  [[ -n "${SSH_KEY}" ]] || die "SSH 公開鍵が見つかりません。--ssh-key で指定してください（鍵なしで作る場合は --no-ssh-key）"
+fi
+SSH_KEY_CONTENT=""
+if [[ -n "${SSH_KEY}" ]]; then
+  [[ -f "${SSH_KEY}" ]] || die "公開鍵が見つかりません: ${SSH_KEY}"
+  echo "SSH 公開鍵: ${SSH_KEY}"
+  SSH_KEY_CONTENT="$(cat "${SSH_KEY}")"
+  ARGS+=(--ssh-key /tmp/ssh-key.pub)
+fi
 
 TTY=()
 [[ -t 0 && -t 1 ]] && TTY=(-t)

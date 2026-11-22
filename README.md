@@ -50,14 +50,14 @@ CI はビルドが通ることの検査だけを行う。ISO はパスワード�
 
 1. ISO を作る。使い捨てのコンテナ内でビルドするので、ホストにツールを入れる必要はない。
    ```bash
-   envs/debian-pc/build-iso-in-container.sh --ssh-key ~/.ssh/id_ed25519.pub
+   envs/debian-pc/build-iso-in-container.sh
    ```
    - コンテナランタイムは Apple の `container`（macOS 26+、事前に `container system start`）、`docker`、`podman` の順に自動で選ぶ。
    - コンテナを使わない場合は `envs/debian-pc/build-iso.sh` を直接実行する（`git`, `curl`, `xorriso`, `cpio`, `gzip` が必要）。
    - Debian ISO のダウンロードは `out/cache/` にキャッシュされる。
    - 人間用ユーザー（sudo あり、既定名 `owner`）のパスワードはランダムに生成され、表示と `out/agent-env-debian-pc.password` への保存が行われる。パスワードマネージャ等に保存したら、ISO とパスワードファイルは削除する。
    - `--user` で人間用ユーザーの名前を変えられる（`admin` は Debian の予約名で使えない）。
-   - `--ssh-key` を指定すると人間用ユーザーに鍵が登録され、SSH のパスワードログインは無効になる。
+   - SSH 公開鍵（既定は `~/.ssh/id_ed25519.pub` → `id_ecdsa.pub` → `id_rsa.pub` の順に自動検出、`--ssh-key` で指定可）が人間用ユーザーに登録され、SSH のパスワードログインは無効になる。鍵が無ければ中断する（鍵なしで作るなら `--no-ssh-key`）。
    - ISO には commit 済みの内容が入る（未コミットの変更があると中断する）。
 2. ISO を USB メモリに書き込む（書き込み先を取り違えないよう、リムーバブルドライブだけを表示するツールを推奨）。
 3. PC を USB から起動し、メニュー先頭の `agent-env: Automated install (ERASES DISK)` で Enter を押す。
@@ -67,6 +67,20 @@ CI はビルドが通ることの検査だけを行う。ISO はパスワード�
 6. `sudo -iu agent` で入り、agent 側の環境（別リポジトリ）をセットアップする。
 
 リポジトリは `/opt/agent-env` に配置される。
+
+#### Mac からの接続
+ホスト名 `agent-box` を mDNS（avahi）で公開するので、同じ LAN の Mac から IP を調べずに接続できる。root ログインは無効。
+```
+# ~/.ssh/config
+Host agent-box
+  HostName agent-box.local
+  User owner
+```
+```bash
+ssh agent-box
+```
+- 再インストールするとホスト鍵が変わるので、`ssh-keygen -R agent-box.local` で古い鍵を消す。
+- エージェントとして作業するときは `ssh agent-box` 後に `sudo -iu agent`。
 
 #### 運用（自動更新）
 | 対象 | 仕組み | タイミング |

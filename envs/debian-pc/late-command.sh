@@ -20,7 +20,8 @@ cp /target/opt/agent-env/envs/debian-pc/system/agent-env-firstboot.service /targ
 in-target systemctl enable agent-env-firstboot.service
 [ -L /target/etc/systemd/system/multi-user.target.wants/agent-env-firstboot.service ]
 
-# SSH 公開鍵が同梱されていれば登録し、パスワードでの SSH ログインを無効化する
+# SSH: root ではログインさせない。公開鍵が同梱されていれば登録し、パスワードでのログインを無効化する
+echo "PermitRootLogin no" > /target/etc/ssh/sshd_config.d/agent-env.conf
 if [ -f "${SRC}/authorized_keys" ]; then
   SSH_DIR="/target/home/${HUMAN_USER}/.ssh"
   mkdir -p "${SSH_DIR}"
@@ -28,5 +29,5 @@ if [ -f "${SRC}/authorized_keys" ]; then
   chmod 700 "${SSH_DIR}"
   chmod 600 "${SSH_DIR}/authorized_keys"
   in-target chown -R "${HUMAN_USER}:${HUMAN_USER}" "/home/${HUMAN_USER}/.ssh"
-  echo "PasswordAuthentication no" > /target/etc/ssh/sshd_config.d/agent-env.conf
+  printf '%s\n' "PasswordAuthentication no" "KbdInteractiveAuthentication no" >> /target/etc/ssh/sshd_config.d/agent-env.conf
 fi
