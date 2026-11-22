@@ -8,6 +8,7 @@
 #   --ssh-key を省略すると ~/.ssh/id_ed25519.pub, id_ecdsa.pub, id_rsa.pub の順に探して使う。
 #   見つからなければ中断する（SSH 鍵なしで作る場合は --no-ssh-key）。
 #   AGENT_ENV_CONTAINER_ARGS で run に引数を追加できる（プロキシ設定など）。
+#   macOS では、ビルド後に続けて write-usb.sh で USB メモリへの書き込みに進む（--no-write で省略）。
 #
 # ランタイム間の差を避けるため、使うのは --rm / -t / -e / -v <ディレクトリ>:<パス> だけにしている。
 # （単一ファイルのマウントや名前付きボリュームは使わない）
@@ -35,10 +36,12 @@ echo "コンテナランタイム: ${RUNTIME}"
 ARGS=()
 SSH_KEY=""
 NO_SSH_KEY=0
+WRITE_USB=1
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --ssh-key) SSH_KEY="$2"; shift 2 ;;
     --no-ssh-key) NO_SSH_KEY=1; shift ;;
+    --no-write) WRITE_USB=0; shift ;;
     *) ARGS+=("$1"); shift ;;
   esac
 done
@@ -64,7 +67,7 @@ TTY=()
 # - GIT_OPTIONAL_LOCKS=0: git status がホストの .git/index を書き換えないようにする
 # SC2016: コンテナ内で展開させるため単一引用符で渡す
 # shellcheck disable=SC2086,SC2016
-exec "${RUNTIME}" run --rm ${TTY[@]+"${TTY[@]}"} \
+"${RUNTIME}" run --rm ${TTY[@]+"${TTY[@]}"} \
   -v "${REPO_ROOT}:/work" \
   -e XDG_CACHE_HOME=/work/out/cache \
   -e GIT_OPTIONAL_LOCKS=0 \
@@ -81,3 +84,9 @@ exec "${RUNTIME}" run --rm ${TTY[@]+"${TTY[@]}"} \
     trap "chown -R \"\${HOST_UID}:\${HOST_GID}\" /work/out 2>/dev/null || true" EXIT
     /work/envs/debian-pc/build-iso.sh "$@"
   ' build-iso ${ARGS[@]+"${ARGS[@]}"}
+
+# ISO の書き込み（macOS のホスト側で行う。コンテナからは USB メモリに触れない）
+if [[ "${WRITE_USB}" -eq 1 && "$(uname -s)" == Darwin && -t 0 ]]; then
+  echo
+  "${ENV_DIR}/write-usb.sh"
+fi

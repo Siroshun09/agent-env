@@ -177,6 +177,6 @@ log "完了: out/$(basename "${OUT_ISO}")"
 echo "ユーザー:   ${HUMAN_USER}"
 echo "パスワード: ${PASSWORD}  （out/$(basename "${OUT_PASSWORD}") にも保存）"
 echo
-echo "USB メモリに書き込み、起動メニューで Enter を押すとインストールが始まります。"
+echo "USB メモリに書き込み（macOS: envs/debian-pc/write-usb.sh）、起動メニューで Enter を押すとインストールが始まります。"
 echo "インストール中に聞かれるのはインストール先ディスクの選択と確認だけです。"
 echo "パスワードをパスワードマネージャ等に保存したら、パスワードファイルは削除してください（ISO にはハッシュだけが入っています）。"
