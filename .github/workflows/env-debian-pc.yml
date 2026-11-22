@@ -142,7 +142,7 @@ jobs:
         run: |
           # ログ（パスワードを含む）と鍵はリポジトリ外に置く。リポジトリ内だと未コミットの変更とみなされる
           ssh-keygen -q -t ed25519 -N '' -f "${RUNNER_TEMP}/ci-key"
-          ./build-iso.sh --ssh-key "${RUNNER_TEMP}/ci-key.pub" > "${RUNNER_TEMP}/build.log"
+          ./build-iso.sh --ssh-key "${RUNNER_TEMP}/ci-key.pub" --allow-non-main > "${RUNNER_TEMP}/build.log"
       - name: check ISO contents
         run: |
           # 実機インストール前の回帰防止: 起動メニュー・preseed・同梱ファイルが期待どおり組み込まれているか

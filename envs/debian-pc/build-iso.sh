@@ -3,9 +3,10 @@
 # 人間用ユーザー（owner、sudo あり）のパスワードはランダムに生成し、表示して out/ に保存する（ISO にはハッシュだけを入れる）。
 # 公開鍵を登録し、SSH のパスワードログインは無効にする。インストール先ディスクはインストール時に選ぶ。
 # ISO には HEAD のコミットを main として入れる。インストール後の apply.sh は GitHub の main からの
-# fast-forward しか受け付けないので、本番用は GitHub の main と同じコミットから作ること。
+# fast-forward しか受け付けないので、HEAD が GitHub の main と一致しなければ中断する。
 #
-# 使い方: envs/debian-pc/build-iso.sh --ssh-key ~/.ssh/id_ed25519.pub
+# 使い方: envs/debian-pc/build-iso.sh --ssh-key ~/.ssh/id_ed25519.pub [--allow-non-main]
+#   --allow-non-main  検証用。GitHub の main と異なるコミットからも作る（その PC では apply.sh を使えないことがある）
 # 必要なもの: git, curl, xorriso, cpio, gzip, openssl（passwd -6 対応のもの。macOS 標準の LibreSSL は不可）
 #   macOS: brew install xorriso openssl（または build-iso-in-container.sh を使う）
 set -euo pipefail
@@ -20,8 +21,16 @@ OUT_PASSWORD="${OUT_DIR}/agent-env-debian-pc.password"
 die() { echo "エラー: $*" >&2; exit 1; }
 log() { printf '\n==> %s\n' "$*"; }
 
-[[ $# -eq 2 && "$1" == --ssh-key ]] || die "使い方: $0 --ssh-key <公開鍵>"
-SSH_KEY="$2"
+SSH_KEY=""
+ALLOW_NON_MAIN=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --ssh-key) SSH_KEY="$2"; shift 2 ;;
+    --allow-non-main) ALLOW_NON_MAIN=1; shift ;;
+    *) die "不明な引数: $1" ;;
+  esac
+done
+[[ -n "${SSH_KEY}" ]] || die "使い方: $0 --ssh-key <公開鍵> [--allow-non-main]"
 [[ -f "${SSH_KEY}" ]] || die "公開鍵が見つかりません: ${SSH_KEY}"
 ! grep -q "PRIVATE KEY" "${SSH_KEY}" || die "秘密鍵が指定されています。.pub を指定してください"
 for cmd in git curl xorriso cpio gzip openssl; do
@@ -38,6 +47,13 @@ cd "${REPO_ROOT}"
 [[ -z "$(git status --porcelain)" ]] || die "未コミットの変更があります。ISO には commit 済みの内容しか入りません"
 [[ "$(git rev-parse --is-shallow-repository)" == false ]] || die "shallow clone では作れません。git fetch --unshallow してください"
 git log -1 --format='%h %s'
+remote_main="$(git ls-remote https://github.com/Siroshun09/agent-env.git refs/heads/main | cut -f1)"
+[[ -n "${remote_main}" ]] || die "GitHub の main を取得できませんでした"
+if [[ "$(git rev-parse HEAD)" != "${remote_main}" ]]; then
+  [[ "${ALLOW_NON_MAIN}" -eq 1 ]] ||
+    die "HEAD が GitHub の main（${remote_main:0:7}）と異なります。この ISO で作った PC では apply.sh を使えなくなることがあります。main を pull するか、検証用なら --allow-non-main を付けてください"
+  echo "警告: GitHub の main と異なるコミットから作ります（検証用）"
+fi
 
 log "Debian ISO ${DEBIAN_ISO_VERSION}"
 mkdir -p "${CACHE_DIR}"

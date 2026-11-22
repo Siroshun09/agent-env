@@ -2,9 +2,10 @@
 # build-iso.sh を使い捨ての Debian コンテナ内で実行し、macOS では続けて write-usb.sh で USB メモリに書き込む。
 # ホストに xorriso などを入れずに済む。ランタイムは container（Apple 純正, macOS 26+）, docker, podman の順に探す。
 #
-# 使い方: envs/debian-pc/build-iso-in-container.sh [--ssh-key ~/.ssh/id_ed25519.pub] [--no-write]
-#   --ssh-key   省略時は ~/.ssh/id_ed25519.pub, id_ecdsa.pub, id_rsa.pub の順に探す
-#   --no-write  USB メモリに書き込まない
+# 使い方: envs/debian-pc/build-iso-in-container.sh [--ssh-key ~/.ssh/id_ed25519.pub] [--no-write] [--allow-non-main]
+#   --ssh-key         省略時は ~/.ssh/id_ed25519.pub, id_ecdsa.pub, id_rsa.pub の順に探す
+#   --no-write        USB メモリに書き込まない
+#   --allow-non-main  検証用。GitHub の main と異なるコミットからも作る（build-iso.sh に渡す）
 set -euo pipefail
 
 ENV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -14,10 +15,12 @@ die() { echo "エラー: $*" >&2; exit 1; }
 
 SSH_KEY=""
 WRITE_USB=1
+EXTRA=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --ssh-key) SSH_KEY="$2"; shift 2 ;;
     --no-write) WRITE_USB=0; shift ;;
+    --allow-non-main) EXTRA=--allow-non-main; shift ;;
     *) die "不明な引数: $1" ;;
   esac
 done
@@ -54,6 +57,7 @@ TTY=()
   -e GIT_OPTIONAL_LOCKS=0 \
   -e SSH_KEY_CONTENT="$(cat "${SSH_KEY}")" \
   -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+  -e EXTRA="${EXTRA}" \
   docker.io/library/debian:trixie bash -euo pipefail -c '
     apt-get update -qq
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
@@ -62,7 +66,7 @@ TTY=()
     printf "%s\n" "${SSH_KEY_CONTENT}" > /tmp/ssh-key.pub
     # 終了時に生成物の所有者をホストのユーザーに戻す（Linux ホスト向け）
     trap "chown -R \"\${HOST_UID}:\${HOST_GID}\" /work/out 2>/dev/null || true" EXIT
-    /work/envs/debian-pc/build-iso.sh --ssh-key /tmp/ssh-key.pub
+    /work/envs/debian-pc/build-iso.sh --ssh-key /tmp/ssh-key.pub ${EXTRA}
   '
 
 if [[ "${WRITE_USB}" -eq 1 && "$(uname -s)" == Darwin && -t 0 ]]; then
