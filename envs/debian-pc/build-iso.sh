@@ -57,6 +57,7 @@ fi
 
 log "Debian ISO ${DEBIAN_ISO_VERSION}"
 mkdir -p "${CACHE_DIR}"
+DEBIAN_ISO_NAME="debian-${DEBIAN_ISO_VERSION}-amd64-netinst.iso"
 BASE_ISO="${CACHE_DIR}/${DEBIAN_ISO_NAME}"
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
 verify() { [[ "$(sha256 "${BASE_ISO}")" == "${DEBIAN_ISO_SHA256}" ]]; }

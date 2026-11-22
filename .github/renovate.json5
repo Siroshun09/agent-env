@@ -1,0 +1,50 @@
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    'github>Siroshun09/renovate-config//github-actions/renovate.json5',
+  ],
+  customManagers: [
+    {
+      description: 'ワークフローの env で固定しているツール（直前の "# renovate:" コメントで対象を指定）',
+      customType: 'regex',
+      managerFilePatterns: [
+        '/^\\.github/workflows/.+\\.ya?ml$/',
+      ],
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+\\w+_VERSION: (?<currentValue>\\S+)(?:\\s+\\w+_SHA256: (?<currentDigest>[0-9a-f]{64}))?',
+      ],
+    },
+    {
+      description: 'ISO のベースにする Debian netinst ISO',
+      customType: 'regex',
+      managerFilePatterns: [
+        '/^envs/debian-pc/iso\\.conf$/',
+      ],
+      matchStrings: [
+        'DEBIAN_ISO_VERSION=(?<currentValue>\\S+)\\nDEBIAN_ISO_SHA256=(?<currentDigest>[0-9a-f]{64})',
+      ],
+      depNameTemplate: 'debian-netinst',
+      datasourceTemplate: 'custom.debian-netinst',
+      versioningTemplate: 'semver-coerced',
+    },
+  ],
+  customDatasources: {
+    'debian-netinst': {
+      // 最新のポイントリリースの SHA256SUMS から、バージョンとハッシュを取り出す
+      defaultRegistryUrlTemplate: 'https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/SHA256SUMS',
+      format: 'plain',
+      transformTemplates: [
+        '{"releases": [releases[$contains(version, /  debian-[0-9.]+-amd64-netinst\\.iso$/)].{"version": $match(version, /debian-([0-9.]+)-amd64/).groups[0], "digest": $substringBefore(version, " ")}]}',
+      ],
+    },
+  },
+  packageRules: [
+    {
+      description: 'SHA256SUMS には公開日時が無いので、待機期間を設けない',
+      matchDatasources: [
+        'custom.debian-netinst',
+      ],
+      minimumReleaseAge: null,
+    },
+  ],
+}
