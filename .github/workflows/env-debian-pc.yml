@@ -82,7 +82,8 @@ jobs:
             cd ~/proj && OPENAI_API_KEY=dummy ANTHROPIC_API_KEY=dummy OPENCODE_CONFIG=~/proj/opencode.json opencode models --standalone > /tmp/models.txt
             rm -r ~/.config/opencode/opencode.jsonc ~/proj'
           grep -q "^openai/" /tmp/models.txt
-          if grep -qv "^openai/" /tmp/models.txt; then cat /tmp/models.txt; exit 1; fi
+          grep -qx "llama-cpp/qwen3.6-35b-a3b" /tmp/models.txt
+          if grep -qvE "^(openai|llama-cpp)/" /tmp/models.txt; then cat /tmp/models.txt; exit 1; fi
 
           # NVIDIA ドライバー: GPU が無い CI では入れないが、リポジトリと依存関係が解決できることを確認する
           grep -q "NVIDIA の GPU が無いのでスキップします" /tmp/bootstrap.log
@@ -91,6 +92,19 @@ jobs:
           apt-get install -s -q --no-install-recommends ${pkgs} | grep -q "^Inst nvidia-kernel-open-dkms "
           # MOK: GPU が無ければ何もしない
           /src/envs/debian-pc/mok-enroll.sh | grep -q "NVIDIA GPU が無い"
+
+          # ローカル LLM: llama.cpp は GPU が無くても入る。モデルとサーバーは GPU が無ければ入れない
+          /opt/llama.cpp/current/llama-server --version
+          grep -q "モデルとサーバーは入れません" /tmp/bootstrap.log
+          # GPU が無いので nvidia-smi も無い。GPU の確認（ExecStartPre）だけを差し替えて検証する
+          sed 's|^ExecStartPre=/usr/bin/nvidia-smi .*|ExecStartPre=/usr/bin/true|' /src/envs/debian-pc/system/agent-env-llama.service > /tmp/agent-env-llama.service
+          grep -q '^ExecStartPre=/usr/bin/true$' /tmp/agent-env-llama.service
+          out="$(systemd-analyze verify /tmp/agent-env-llama.service 2>&1)"
+          if [ -n "${out}" ]; then echo "${out}"; exit 1; fi
+          # GPU がある場合に入れる CUDA ランタイムの依存関係が解決できること
+          apt-get install -s -q --no-install-recommends cuda-cudart-13-5 libcublas-13-5 | grep -q "^Inst libcublas-13-5 "
+          # root 以外が書き換えられるファイルが無いこと（llama.cpp の配布物は 777 のディレクトリを含む）
+          test -z "$(find /opt/llama.cpp /etc/agent-env /etc/opencode /etc/claude-code -perm -o+w ! -type l)"
 
           # Mac のブラウザから接続するためのサービス（systemd は動いていないので、ユニットの検証と OpenCode サーバーの単体起動）
           out="$(systemd-analyze verify /etc/systemd/system/agent-env-claude-remote.* /etc/systemd/system/agent-env-opencode.service 2>&1)"

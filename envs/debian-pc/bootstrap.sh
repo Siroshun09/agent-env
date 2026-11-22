@@ -10,6 +10,8 @@ ENV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT_USER=agent
 
 log() { printf '\n==> %s\n' "$*"; }
+# 作るファイルの権限を、呼び出し元の umask に左右されないようにする
+umask 022
 [[ $EUID -eq 0 ]] || { echo "root で実行してください" >&2; exit 1; }
 
 log "apt リポジトリ（Debian 以外）"
@@ -85,6 +87,83 @@ if has_nvidia_gpu; then
   fi
 else
   echo "NVIDIA の GPU が無いのでスキップします"
+fi
+
+log "ローカル LLM（llama.cpp）"
+# 本体は GPU が無くても入れる（CPU でも動き、CI で検査できるため）。モデルとサーバーは NVIDIA の GPU がある場合だけ
+llama_dir="/opt/llama.cpp/${LLAMA_CPP_VERSION}"
+if [[ ! -x "${llama_dir}/llama-server" ]]; then
+  tmp="$(mktemp -d)"
+  tarball="${tmp}/llama.tar.gz"
+  curl -fsSL -o "${tarball}" \
+    "https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_CPP_VERSION}/llama-${LLAMA_CPP_VERSION}-bin-ubuntu-cuda-13.5-x64.tar.gz"
+  echo "${LLAMA_CPP_SHA256}  ${tarball}" | sha256sum -c --quiet -
+  mkdir -p "${tmp}/x"
+  tar -xzf "${tarball}" -C "${tmp}/x" --strip-components=1 --no-same-owner
+  # 配布物のディレクトリは誰でも書き込める権限（777）なので、root 以外が書き換えられないようにする
+  chmod -R go-w "${tmp}/x"
+  chmod 0755 "${tmp}/x"
+  install -d -m 0755 /opt/llama.cpp
+  rm -rf "${llama_dir}"
+  mv "${tmp}/x" "${llama_dir}"
+  rm -rf "${tmp}"
+fi
+ln -sfn "${LLAMA_CPP_VERSION}" /opt/llama.cpp/current
+# 古いバージョンを消す（動作中のサーバーは、再起動するまで古いファイルを使い続ける）
+find /opt/llama.cpp -mindepth 1 -maxdepth 1 -type d ! -name "${LLAMA_CPP_VERSION}" -exec rm -rf {} +
+
+if has_nvidia_gpu; then
+  # 配布バイナリが使う CUDA ランタイム（ドライバーと同じ NVIDIA のリポジトリから）
+  apt-get install -y -q --no-install-recommends cuda-cudart-13-5 libcublas-13-5
+  if ! id llama >/dev/null 2>&1; then
+    useradd --system --no-create-home --home-dir /var/lib/llama --shell /usr/sbin/nologin llama
+  fi
+  # モデルの置き場所は root 所有にする（llama ユーザーは読むだけ。llama-server が乗っ取られても、
+  # root が書き込む場所にシンボリックリンクを置けないように）
+  install -d -m 0755 -o root -g root /var/lib/llama /var/lib/llama/models
+  model="/var/lib/llama/models/$(basename "${LLAMA_MODEL_URL}")"
+  if [[ ! -f "${model}" ]]; then
+    # 数十 GB あるので、失敗して再試行したときは途中から再開する。止まった接続は 2 分で切る
+    curl -fL --retry 5 --speed-limit 1024 --speed-time 120 -C - -o "${model}.part" "${LLAMA_MODEL_URL}" || {
+      rc=$?
+      # HTTP のエラー（途中のファイルが本来より大きいときの 416 など）は、途中のファイルを消してやり直す
+      if [[ ${rc} -eq 22 ]]; then rm -f "${model}.part"; fi
+      echo "モデルのダウンロードに失敗しました（curl: ${rc}）" >&2
+      exit 1
+    }
+    if ! echo "${LLAMA_MODEL_SHA256}  ${model}.part" | sha256sum -c --quiet -; then
+      # 壊れた途中のファイルから再開し続けないように消す
+      rm -f "${model}.part"
+      echo "モデルの SHA256 が一致しません" >&2
+      exit 1
+    fi
+    chmod 0644 "${model}.part"
+    mv "${model}.part" "${model}"
+  fi
+  # 使わなくなったモデルと、途中のファイルを消す
+  find /var/lib/llama/models -maxdepth 1 \( -name '*.gguf' -o -name '*.gguf.part' \) ! -path "${model}" -delete
+
+  env_new="$(printf 'LLAMA_MODEL=%s\nLLAMA_MODEL_ALIAS=%s\n' "${model}" "${LLAMA_MODEL_ALIAS}")"
+  env_changed=false
+  if [[ "$(cat /etc/agent-env/llama-server.env 2>/dev/null || true)" != "${env_new}" ]]; then
+    install -d -m 0755 /etc/agent-env
+    printf '%s\n' "${env_new}" > /etc/agent-env/llama-server.env
+    env_changed=true
+  fi
+  install -m 0644 "${ENV_DIR}/system/agent-env-llama.service" /etc/systemd/system/
+  systemctl enable agent-env-llama.service
+  if [[ -d /run/systemd/system ]]; then
+    systemctl daemon-reload
+    # 作業中のセッションを持たないので、モデルや llama.cpp が変わったら再起動してよい
+    # ドライバーを入れた直後（再起動前）は GPU を使えないので起動しない（起動時に自動で起動する）
+    if ! nvidia-smi >/dev/null 2>&1; then
+      echo "GPU を使えないので、llama-server は再起動後に起動します"
+    elif [[ "${env_changed}" == true || "$(readlink /proc/"$(systemctl show -p MainPID --value agent-env-llama)"/exe 2>/dev/null || true)" != "${llama_dir}/llama-server" ]]; then
+      systemctl restart --no-block agent-env-llama.service
+    fi
+  fi
+else
+  echo "NVIDIA の GPU が無いので、モデルとサーバーは入れません"
 fi
 
 log "Mac のブラウザから接続するためのサービス"

@@ -4,9 +4,20 @@
   "$schema": "https://opencode.ai/config.json",
   // バージョンは agent-env で固定し、Renovate と apply.sh で更新する
   "update": "disable",
+  // ローカル LLM（llama.cpp の llama-server。bootstrap.sh が NVIDIA の GPU がある PC でだけ起動する）
+  "providers": {
+    "llama-cpp": {
+      "name": "llama.cpp（ローカル）",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": { "baseURL": "http://127.0.0.1:8080/v1" },
+      // モデル名は tools.conf の LLAMA_MODEL_ALIAS と合わせる
+      "models": { "qwen3.6-35b-a3b": { "name": "Qwen3.6 35B-A3B（ローカル）" } },
+    },
+  },
   // 使ってよいモデル提供元だけを許可する（ChatGPT プランでのサインインは openai）
   "policies": [
     { "action": "provider.use", "resource": "*", "effect": "deny" },
     { "action": "provider.use", "resource": "openai", "effect": "allow" },
+    { "action": "provider.use", "resource": "llama-cpp", "effect": "allow" },
   ],
 }
