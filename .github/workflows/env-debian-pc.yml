@@ -92,6 +92,11 @@ jobs:
             test "$(gh auth token)" = tok-org
             git remote set-url origin git@github.com:Alice/repo.git
             test "$(gh auth token)" = tok-alice
+            # SSH の URL は HTTPS に読み替える
+            test "$(git remote get-url origin)" = https://github.com/Alice/repo.git
+            git remote set-url origin ssh://git@github.com/Alice/repo.git
+            test "$(git remote get-url origin)" = https://github.com/Alice/repo.git
+            test "$(gh auth token)" = tok-alice
             # gh repo set-default の設定を優先する
             git remote add upstream https://github.com/my-org/repo.git
             test "$(gh auth token)" = tok-org

@@ -74,7 +74,7 @@ ssh -t agent-box sudo -iu agent
   - トークンは対象のリポジトリに限定し、権限は Contents と Pull requests の Read and write だけにして、有効期限を付けてください。org のトークンは、org の設定で fine-grained PAT が許可されている必要があります（管理者の承認が必要な場合もあります）。`main` へのマージはブランチ保護で防ぎます。
   - git は接続先の URL（`https://github.com/<持ち主>/...`）、gh は操作対象のリポジトリ（`-R`、`gh repo clone <持ち主>/<名前>`、今いるリポジトリの `gh repo set-default` やリモートなど）から持ち主を判断し、そのトークンを使います。エージェントは使い分けを意識する必要はありません。
   - 持ち主のトークンが無い場合や、持ち主がわからない場合は、どのトークンも使いません（別の持ち主のトークンを誤って使わないため）。
-  - git は HTTPS の URL だけが対象です。SSH の URL（`git@github.com:...`）には SSH の鍵が必要で、この PC では設定していません。
+  - SSH の URL（`git@github.com:...`、`ssh://git@github.com/...`）は、git が HTTPS に読み替えます。この PC には SSH の鍵を置かず、トークンで認証するためです。
   - `gh auth login` と `gh auth setup-git` は使えないようにしています。以前の方式で保存した gh の認証情報と git の設定は、bootstrap が削除します。
   - 保存済みのトークンの一覧は `agent-env-github-token list`、削除は `agent-env-github-token remove <持ち主>` です。トークンは `~/.config/agent-env/github-tokens/` に保存されます（`agent` ユーザーだけが読めます）。
 

@@ -69,6 +69,10 @@ install -m 0755 "${ENV_DIR}/system/github/git-credential-agent-env.sh" /usr/loca
 install -m 0755 "${ENV_DIR}/system/github/gh.sh" /usr/local/bin/gh
 git config --system --replace-all credential.https://github.com.helper agent-env
 git config --system credential.https://github.com.useHttpPath true
+# SSH の URL は HTTPS に読み替える（SSH の鍵は置かないので、トークンを使える HTTPS に統一する）
+git config --system --unset-all url.https://github.com/.insteadOf || true
+git config --system --add url.https://github.com/.insteadOf git@github.com:
+git config --system --add url.https://github.com/.insteadOf ssh://git@github.com/
 # 以前の方式（gh auth login と gh auth setup-git）の認証情報を消す。残っていると、git のユーザー設定が
 # 上の helper を無効にしたり、gh が古いトークンを使ったりする。ファイルの操作は agent ユーザーとして行う
 agent_git() { runuser -u "${AGENT_USER}" -- env HOME="/home/${AGENT_USER}" git config --global "$@"; }
