@@ -81,6 +81,11 @@ PASSWORD="$(head -c 1024 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | cut -c 1-2
 PASSWORD_HASH="$(printf '%s' "${PASSWORD}" | openssl passwd -6 -stdin)"
 [[ "${PASSWORD_HASH}" =~ ^\$6\$[./A-Za-z0-9]+\$[./A-Za-z0-9]{86}$ ]] || die "パスワードのハッシュを生成できませんでした"
 
+# Secure Boot の鍵登録（MOK）の承認に使うパスワード。インストール直後の再起動で 1 回だけ入力する。
+# MokManager は US 配列で入力を受けるので、配列に依存しない数字 8 桁にする（承認には PC の前での操作が要るので短くてよい）
+MOK_PASSWORD="$(od -An -N8 -tu8 /dev/urandom | tr -d ' \n' | cut -c 1-8)"
+[[ "${MOK_PASSWORD}" =~ ^[0-9]{8}$ ]] || die "MOK のパスワードを生成できませんでした"
+
 log "ISO の組み立て"
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
@@ -134,10 +139,11 @@ EOF
 git bundle create "${WORK}/extra/repo.bundle" HEAD 2>/dev/null
 cp "${ENV_DIR}/late-command.sh" "${ENV_DIR}/select-disk.sh" "${WORK}/extra/"
 cp "${SSH_KEY}" "${WORK}/extra/authorized_keys"
+printf '%s\n' "${MOK_PASSWORD}" > "${WORK}/extra/mok-password"
 
 mkdir -p "${OUT_DIR}"
 rm -f "${OUT_ISO}" "${OUT_PASSWORD}"
-(umask 077 && printf '%s\n' "${PASSWORD}" > "${OUT_PASSWORD}")
+(umask 077 && printf '%s\n' "${PASSWORD}" "MOK: ${MOK_PASSWORD}" > "${OUT_PASSWORD}")
 xorriso -indev "${BASE_ISO}" -outdev "${OUT_ISO}" \
   -map "${WORK}/initrd.gz" /install.amd/initrd.gz \
   -map "${WORK}/grub.cfg.new" /boot/grub/grub.cfg \
@@ -148,6 +154,7 @@ xorriso -indev "${BASE_ISO}" -outdev "${OUT_ISO}" \
 log "完了: out/$(basename "${OUT_ISO}")"
 echo "ユーザー:   owner"
 echo "パスワード: ${PASSWORD}  （out/$(basename "${OUT_PASSWORD}") にも保存）"
+echo "MOK:        ${MOK_PASSWORD}  （NVIDIA GPU があり Secure Boot が有効な場合だけ、インストール直後の再起動で使う）"
 echo
 echo "USB メモリに書き込み（macOS: envs/debian-pc/write-usb.sh）、PC を USB から起動してメニューで Enter を押すとインストールが始まります。"
 echo "インストール中に聞かれるのはインストール先ディスクの選択と確認だけです。"

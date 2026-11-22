@@ -59,6 +59,34 @@ install -m 0644 "${ENV_DIR}/system/claude-code/managed-settings.json" /etc/claud
 install -m 0644 "${ENV_DIR}/system/opencode/opencode.jsonc" /etc/opencode/
 install -m 0644 "${ENV_DIR}/system/profile.d/agent-env-mise.sh" /etc/profile.d/
 
+log "NVIDIA ドライバー（NVIDIA の GPU がある場合だけ）"
+# DKMS でビルドするオープン版のカーネルモジュールと、計算用（CUDA）のライブラリだけを入れる（画面表示用は入れない）。
+# ドライバーのブランチは nvidia-driver-pinning-* で固定し、上げるときはここを書き換える
+NVIDIA_PKGS=(linux-headers-amd64 nvidia-driver-pinning-620 nvidia-kernel-open-dkms nvidia-driver-cuda)
+has_nvidia_gpu() {
+  local d
+  for d in /sys/bus/pci/devices/*; do
+    [[ "$(cat "$d/vendor")" == 0x10de && "$(cat "$d/class")" == 0x03* ]] && return 0
+  done
+  return 1
+}
+if has_nvidia_gpu; then
+  # Secure Boot が有効なら、モジュールの署名鍵の MOK 登録を申請する（インストール中に申請済みなら何もしない）
+  # 失敗しても残りの設定は続ける（ドライバーは入り、署名鍵の登録が済めば読み込まれる）
+  if ! "${ENV_DIR}/mok-enroll.sh"; then
+    echo "警告: MOK の登録申請に失敗しました。次の bootstrap（apply.sh）で再試行します" >&2
+  fi
+  apt-get install -y -q --no-install-recommends "${NVIDIA_PKGS[@]}"
+  if ! nvidia-smi >/dev/null 2>&1; then
+    # 初回は nouveau の無効化（initramfs）と、MOK の承認のために再起動が要る
+    echo "NVIDIA ドライバーを使うには再起動が必要です（sudo reboot）"
+    echo "agent-env: NVIDIA ドライバー" >> /run/reboot-required.pkgs
+    touch /run/reboot-required
+  fi
+else
+  echo "NVIDIA の GPU が無いのでスキップします"
+fi
+
 log "Mac のブラウザから接続するためのサービス"
 # エージェントの作業場所。Remote Control と OpenCode のセッションはここで始まる。
 # agent ユーザーとして作る（root で agent のホーム以下を操作すると、agent が置いたシンボリックリンクを

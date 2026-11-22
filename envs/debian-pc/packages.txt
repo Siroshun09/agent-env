@@ -17,6 +17,8 @@ systemd
 tmux
 python3
 openssl
+# Secure Boot の鍵登録（MOK）の申請（mok-enroll.sh）
+mokutil
 # エージェントのツール（claude-code と mise は公式の apt リポジトリから）
 claude-code
 mise
