@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
-# 無人インストール用の Debian ISO を作る。root 不要。
-# 生成物にはパスワードハッシュが入るので、公開・共有しないこと（out/ は .gitignore 済み）。
+# 無人インストール用の Debian ISO を作る。root 不要。Linux / macOS で動く。
+# インストール先ディスクとパスワードはインストール時に入力するので、ISO に秘密情報やマシン固有の設定は入らない。
 #
-# 使い方: envs/debian-pc/build-iso.sh [--user owner] [--disk /dev/nvme0n1] [--ssh-key ~/.ssh/id_ed25519.pub]
+# 使い方: envs/debian-pc/build-iso.sh [--user owner] [--ssh-key ~/.ssh/id_ed25519.pub]
 #   --user     人間用ユーザー（sudo あり）の名前。既定は owner。admin など Debian の予約名は使えない。
-#   --disk     インストール先（全消去される）。ディスクが複数ある PC では必ず指定する。
 #   --ssh-key  人間用ユーザーに登録する公開鍵。指定するとパスワードでの SSH ログインを無効化する。
-#   ADMIN_PASSWORD_HASH 環境変数があれば、パスワード入力を省略してそのハッシュを使う。
-# 必要なもの: git, curl, xorriso, cpio, gzip, openssl
+# 必要なもの: git, curl, xorriso, cpio, gzip（macOS: brew install xorriso）
 set -euo pipefail
 
 ENV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,22 +19,19 @@ die() { echo "エラー: $*" >&2; exit 1; }
 log() { printf '\n==> %s\n' "$*"; }
 
 HUMAN_USER="owner"
-DISK=""
 SSH_KEY=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --user) HUMAN_USER="$2"; shift 2 ;;
-    --disk) DISK="$2"; shift 2 ;;
     --ssh-key) SSH_KEY="$2"; shift 2 ;;
     *) die "不明な引数: $1" ;;
   esac
 done
 [[ "${HUMAN_USER}" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || die "--user は小文字英数字とハイフンで指定してください"
 [[ "${HUMAN_USER}" != agent ]] || die "--user に agent は使えません（エージェント用に予約）"
-[[ -z "${DISK}" || "${DISK}" == /dev/* ]] || die "--disk は /dev/... で指定してください"
 [[ -z "${SSH_KEY}" ]] || [[ -f "${SSH_KEY}" ]] || die "公開鍵が見つかりません: ${SSH_KEY}"
 [[ -z "${SSH_KEY}" ]] || ! grep -q "PRIVATE KEY" "${SSH_KEY}" || die "秘密鍵が指定されています。.pub を指定してください"
-for cmd in git curl xorriso cpio gzip openssl; do
+for cmd in git curl xorriso cpio gzip; do
   command -v "${cmd}" >/dev/null || die "${cmd} が必要です"
 done
 
@@ -54,7 +49,8 @@ echo "${BRANCH} @ $(git rev-parse --short HEAD)"
 log "Debian ISO ${DEBIAN_ISO_VERSION}"
 mkdir -p "${CACHE_DIR}"
 BASE_ISO="${CACHE_DIR}/${DEBIAN_ISO_NAME}"
-verify() { echo "${DEBIAN_ISO_SHA256}  ${BASE_ISO}" | sha256sum -c --status; }
+sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
+verify() { [[ "$(sha256 "${BASE_ISO}")" == "${DEBIAN_ISO_SHA256}" ]]; }
 if ! { [[ -f "${BASE_ISO}" ]] && verify; }; then
   # 最新版は current/、古くなったら archive/ に移る
   for url in \
@@ -66,28 +62,13 @@ if ! { [[ -f "${BASE_ISO}" ]] && verify; }; then
   verify || { rm -f "${BASE_ISO}"; die "ISO の SHA256 が一致しません"; }
 fi
 
-log "${HUMAN_USER} のパスワード"
-if [[ -z "${ADMIN_PASSWORD_HASH:-}" ]]; then
-  read -rsp "パスワード: " pw1; echo
-  read -rsp "パスワード（確認）: " pw2; echo
-  [[ -n "${pw1}" ]] || die "パスワードが空です"
-  [[ "${pw1}" == "${pw2}" ]] || die "パスワードが一致しません"
-  ADMIN_PASSWORD_HASH="$(printf '%s' "${pw1}" | openssl passwd -6 -stdin)"
-  unset pw1 pw2
-fi
-
 log "ISO の組み立て"
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 mkdir -p "${WORK}/initrd" "${WORK}/extra"
 
 # preseed: プレースホルダを埋めて initrd に入れる（/preseed.cfg は自動で読まれる）
-sed -e "s|@ADMIN_PASSWORD_HASH@|${ADMIN_PASSWORD_HASH//|/\\|}|" \
-    -e "s|@HUMAN_USER@|${HUMAN_USER}|g" \
-    "${ENV_DIR}/preseed.cfg" > "${WORK}/initrd/preseed.cfg"
-if [[ -n "${DISK}" ]]; then
-  echo "d-i partman-auto/disk string ${DISK}" >> "${WORK}/initrd/preseed.cfg"
-fi
+sed -e "s|@HUMAN_USER@|${HUMAN_USER}|g" "${ENV_DIR}/preseed.cfg" > "${WORK}/initrd/preseed.cfg"
 ! grep -q '@[A-Z_]*@' "${WORK}/initrd/preseed.cfg" || die "preseed に未置換のプレースホルダがあります"
 
 xorriso -osirrox on -indev "${BASE_ISO}" \
@@ -126,7 +107,7 @@ label agentenv
 EOF
 
 # 安全確認: どちらの起動メニューも自動では進まない（キー入力を待つ）こと
-[[ "$(grep -E '^\s*set timeout=' "${WORK}/grub.cfg.new" | tail -1)" == "set timeout=-1" ]] ||
+[[ "$(grep -E '^[[:space:]]*set timeout=' "${WORK}/grub.cfg.new" | tail -1)" == "set timeout=-1" ]] ||
   die "grub.cfg が無期限待機になっていません"
 grep -qx 'timeout 0' "${WORK}/isolinux.cfg.new" || die "isolinux.cfg が無期限待機になっていません"
 
@@ -151,4 +132,4 @@ xorriso -indev "${BASE_ISO}" -outdev "${OUT_ISO}" \
 log "完了: ${OUT_ISO}"
 echo "人間用ユーザー: ${HUMAN_USER}"
 echo "USB メモリに書き込み、起動メニューで Enter を押すとインストールが始まります。"
-[[ -n "${DISK}" ]] && echo "インストール先: ${DISK}（全消去）" || echo "インストール先: 自動選択（ディスクが複数ある PC では --disk を指定すること）"
+echo "インストール中に聞かれるのは、インストール先ディスクと ${HUMAN_USER} のパスワードだけです。"
