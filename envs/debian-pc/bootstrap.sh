@@ -160,35 +160,44 @@ if has_nvidia_gpu; then
   # モデルの置き場所は root 所有にする（llama ユーザーは読むだけ。llama-server が乗っ取られても、
   # root が書き込む場所にシンボリックリンクを置けないように）
   install -d -m 0755 -o root -g root /var/lib/llama /var/lib/llama/models
-  model="/var/lib/llama/models/$(basename "${LLAMA_MODEL_URL}")"
-  if [[ ! -f "${model}" ]]; then
-    # 数十 GB あるので、失敗して再試行したときは途中から再開する。止まった接続は 2 分で切る
-    curl -fL --retry 5 --speed-limit 1024 --speed-time 120 -C - -o "${model}.part" "${LLAMA_MODEL_URL}" || {
-      rc=$?
-      # HTTP のエラー（途中のファイルが本来より大きいときの 416 など）は、途中のファイルを消してやり直す
-      if [[ ${rc} -eq 22 ]]; then rm -f "${model}.part"; fi
-      echo "モデルのダウンロードに失敗しました（curl: ${rc}）" >&2
-      exit 1
-    }
-    if ! echo "${LLAMA_MODEL_SHA256}  ${model}.part" | sha256sum -c --quiet -; then
-      # 壊れた途中のファイルから再開し続けないように消す
-      rm -f "${model}.part"
-      echo "モデルの SHA256 が一致しません" >&2
-      exit 1
+  # llama-server（ルーターモード）が読むモデルの一覧。モデルごとの設定を書く（キーは llama-server の引数名）
+  preset="version = 1"$'\n'
+  keep=()
+  for entry in "${LLAMA_MODELS[@]}"; do
+    read -r name url sha256 <<< "${entry}"
+    model="/var/lib/llama/models/$(basename "${url}")"
+    if [[ ! -f "${model}" ]]; then
+      # 数十 GB あるので、失敗して再試行したときは途中から再開する。止まった接続は 2 分で切る
+      curl -fL --retry 5 --speed-limit 1024 --speed-time 120 -C - -o "${model}.part" "${url}" || {
+        rc=$?
+        # HTTP のエラー（途中のファイルが本来より大きいときの 416 など）は、途中のファイルを消してやり直す
+        if [[ ${rc} -eq 22 ]]; then rm -f "${model}.part"; fi
+        echo "モデル（${name}）のダウンロードに失敗しました（curl: ${rc}）" >&2
+        exit 1
+      }
+      if ! echo "${sha256}  ${model}.part" | sha256sum -c --quiet -; then
+        # 壊れた途中のファイルから再開し続けないように消す
+        rm -f "${model}.part"
+        echo "モデル（${name}）の SHA256 が一致しません" >&2
+        exit 1
+      fi
+      chmod 0644 "${model}.part"
+      mv "${model}.part" "${model}"
     fi
-    chmod 0644 "${model}.part"
-    mv "${model}.part" "${model}"
-  fi
+    keep+=(! -path "${model}")
+    preset+=$'\n'"[${name}]"$'\n'"model = ${model}"$'\n'"ctx-size = 65536"$'\n'
+  done
   # 使わなくなったモデルと、途中のファイルを消す
-  find /var/lib/llama/models -maxdepth 1 \( -name '*.gguf' -o -name '*.gguf.part' \) ! -path "${model}" -delete
+  find /var/lib/llama/models -maxdepth 1 \( -name '*.gguf' -o -name '*.gguf.part' \) "${keep[@]}" -delete
 
-  env_new="$(printf 'LLAMA_MODEL=%s\nLLAMA_MODEL_ALIAS=%s\n' "${model}" "${LLAMA_MODEL_ALIAS}")"
-  env_changed=false
-  if [[ "$(cat /etc/agent-env/llama-server.env 2>/dev/null || true)" != "${env_new}" ]]; then
+  preset_changed=false
+  if [[ "$(cat /etc/agent-env/llama-models.ini 2>/dev/null || true)" != "${preset%$'\n'}" ]]; then
     install -d -m 0755 /etc/agent-env
-    printf '%s\n' "${env_new}" > /etc/agent-env/llama-server.env
-    env_changed=true
+    printf '%s' "${preset}" > /etc/agent-env/llama-models.ini
+    preset_changed=true
   fi
+  # 以前の方式（モデル 1 つ）の設定を消す
+  rm -f /etc/agent-env/llama-server.env
   install -m 0644 "${ENV_DIR}/system/agent-env-llama.service" /etc/systemd/system/
   systemctl enable agent-env-llama.service
   if [[ -d /run/systemd/system ]]; then
@@ -197,7 +206,7 @@ if has_nvidia_gpu; then
     # ドライバーを入れた直後（再起動前）は GPU を使えないので起動しない（起動時に自動で起動する）
     if ! nvidia-smi >/dev/null 2>&1; then
       echo "GPU を使えないので、llama-server は再起動後に起動します"
-    elif [[ "${env_changed}" == true || "$(readlink /proc/"$(systemctl show -p MainPID --value agent-env-llama)"/exe 2>/dev/null || true)" != "${llama_dir}/llama-server" ]]; then
+    elif [[ "${preset_changed}" == true || "$(readlink /proc/"$(systemctl show -p MainPID --value agent-env-llama)"/exe 2>/dev/null || true)" != "${llama_dir}/llama-server" ]]; then
       systemctl restart --no-block agent-env-llama.service
     fi
   fi

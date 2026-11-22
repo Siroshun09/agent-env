@@ -1,6 +1,8 @@
 # ローカル LLM のサーバー（llama.cpp の llama-server）。PC 内（127.0.0.1:8080）だけで待ち受ける。
 # OpenAI 互換の API（/v1）と、ブラウザ用のチャット画面を提供する。OpenCode からはモデル提供元 llama-cpp として使う。
-# モデルや引数は bootstrap.sh が /etc/agent-env/llama-server.env に書く（tools.conf から生成）。
+# ルーターモードで動かす。モデルの一覧と設定は bootstrap.sh が /etc/agent-env/llama-models.ini に書く（tools.conf から生成）。
+# リクエストで指定されたモデルを読み込み、同時に読み込むのは 1 つだけにする（別のモデルが呼ばれると、
+# 処理中のリクエストが終わってから前のモデルを外して切り替える）。
 # 状況確認: journalctl -u agent-env-llama
 [Unit]
 Description=llama.cpp server (local LLM)
@@ -8,12 +10,11 @@ After=network-online.target
 
 [Service]
 User=llama
-EnvironmentFile=/etc/agent-env/llama-server.env
 # GPU を使えない（ドライバーが読み込まれていない、MOK が未承認など）ときは起動しない。
 # llama-server は CPU で動いてしまい、気付かないうちに非常に遅くなるため
 ExecStartPre=/usr/bin/nvidia-smi -L
 # --fit（既定で有効）が、VRAM に収まるように MoE のエキスパートの置き場所などを自動で調整する
-ExecStart=/opt/llama.cpp/current/llama-server --model ${LLAMA_MODEL} --alias ${LLAMA_MODEL_ALIAS} --host 127.0.0.1 --port 8080 --ctx-size 65536
+ExecStart=/opt/llama.cpp/current/llama-server --models-preset /etc/agent-env/llama-models.ini --models-max 1 --host 127.0.0.1 --port 8080
 Restart=on-failure
 RestartSec=60
 

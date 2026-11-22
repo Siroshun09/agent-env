@@ -111,10 +111,17 @@ Claude Code の Remote Control は、Claude にログインすると自動で起
 ## ローカル LLM
 NVIDIA の GPU がある PC では、llama.cpp の `llama-server` がサービス（`agent-env-llama.service`、`llama` ユーザー）として動きます。PC 内（127.0.0.1:8080）だけで待ち受け、OpenAI 互換の API（`/v1`）とチャット画面を提供します。
 
-- モデルは `tools.conf` で固定しています（現在は Qwen3.6 35B-A3B の 4bit 量子化、約 22GB）。MoE のモデルで、VRAM（8GB）に収まらないエキスパートは `--fit` が自動でメインメモリ側に置きます。初回の bootstrap でダウンロードするので、完了まで時間がかかります。
-- OpenCode からは、モデル `llama-cpp/qwen3.6-35b-a3b` として使えます（管理者用の設定で登録済み）。スクリプトなどからは `http://127.0.0.1:8080/v1` を直接呼べます。
+- モデルは `tools.conf` の `LLAMA_MODELS` で固定しています。どちらも MoE のモデルの 4bit 量子化で、VRAM（8GB）に収まらないエキスパートは `--fit` が自動でメインメモリ側に置きます。初回の bootstrap でダウンロードするので、完了まで時間がかかります。
+
+  | モデル名 | モデル | サイズ |
+  |---|---|---|
+  | `qwen3.6-35b-a3b` | Qwen3.6 35B-A3B | 約 22.4GB |
+  | `qwen3-coder-next` | Qwen3-Coder-Next（80B-A3B、コーディング向け） | 約 49.6GB |
+
+- 同時に読み込むのは 1 つだけです（llama-server のルーターモード）。リクエストで別のモデルを指定すると、処理中のリクエストが終わってから自動で切り替わります。切り替えた直後の 1 回目は、モデルの読み込みの分だけ遅くなります。
+- OpenCode からは、モデル選択で `llama-cpp/<モデル名>` を選びます（管理者用の設定で登録済み）。スクリプトなどからは `http://127.0.0.1:8080/v1` を直接呼び、`"model"` にモデル名を指定します。
 - Mac からは、`ssh -N agent-box` を実行したまま http://localhost:8080 を開くとチャット画面を使えます。
-- モデルを変えるときは、`tools.conf` の `LLAMA_MODEL_*` と、`envs/debian-pc/system/opencode/opencode.jsonc` のモデル名を書き換えます。
+- モデルを追加・削除するときは、`tools.conf` の `LLAMA_MODELS` と、`envs/debian-pc/system/opencode/opencode.jsonc` のモデル名を書き換えます。`tools.conf` から消したモデルのファイルは、次の bootstrap で消えます。モデルは / （128GB）に置くので、合計サイズに注意してください。
 - llama.cpp は毎日リリースされるので、Renovate の更新 PR は週 1 回です。バージョンと SHA256（GitHub がリリースの添付ファイルごとに公開している値）を一緒に更新します。
 
 ## 更新
