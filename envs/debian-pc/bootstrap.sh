@@ -60,8 +60,10 @@ install -m 0644 "${ENV_DIR}/system/opencode/opencode.jsonc" /etc/opencode/
 install -m 0644 "${ENV_DIR}/system/profile.d/agent-env-mise.sh" /etc/profile.d/
 
 log "Mac のブラウザから接続するためのサービス"
-# エージェントの作業場所。Remote Control と OpenCode のセッションはここで始まる
-install -d -m 0755 -o "${AGENT_USER}" -g "${AGENT_USER}" "/home/${AGENT_USER}/work"
+# エージェントの作業場所。Remote Control と OpenCode のセッションはここで始まる。
+# agent ユーザーとして作る（root で agent のホーム以下を操作すると、agent が置いたシンボリックリンクを
+# たどって別の場所の所有者や権限を変えてしまうため）
+runuser -u "${AGENT_USER}" -- mkdir -p "/home/${AGENT_USER}/work"
 # OpenCode サーバーのパスワード（初回だけ生成する。確認: sudo cat /etc/agent-env/opencode-server.env）
 install -d -m 0755 /etc/agent-env
 if [[ ! -s /etc/agent-env/opencode-server.env ]]; then

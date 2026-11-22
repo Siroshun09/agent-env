@@ -60,7 +60,11 @@ jobs:
       - run: |
           docker run --rm -v "${GITHUB_WORKSPACE}:/src:ro" debian:trixie bash -euo pipefail -c "$(cat <<'EOF'
           /src/envs/debian-pc/bootstrap.sh
+          # agent が ~/work を root 所有のディレクトリへのシンボリックリンクにしても、2 回目の bootstrap がそれを変えないこと
+          su - agent -c 'rm -r ~/work && ln -s /var/lib ~/work'
           /src/envs/debian-pc/bootstrap.sh
+          test "$(stat -c '%U %a' /var/lib)" = "root 755"
+          su - agent -c 'rm ~/work && mkdir ~/work'
           id agent
           grep "^agent:" /etc/subuid /etc/subgid
           test -f /etc/apt/apt.conf.d/52agent-env-unattended-upgrades
