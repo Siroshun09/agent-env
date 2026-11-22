@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 無人インストール用の Debian ISO を作る。root 不要。Linux / macOS で動く。
-# インストール先ディスクとパスワードはインストール時に入力するので、ISO に秘密情報やマシン固有の設定は入らない。
+# 人間用ユーザーのパスワードはランダムに生成し、表示して out/ に保存する。インストール先ディスクはインストール時に選ぶ。
+# ISO と out/ にはパスワードが平文で入るので、共有しないこと（out/ は .gitignore 済み）。
 #
 # 使い方: envs/debian-pc/build-iso.sh [--user owner] [--ssh-key ~/.ssh/id_ed25519.pub]
 #   --user     人間用ユーザー（sudo あり）の名前。既定は owner。admin など Debian の予約名は使えない。
@@ -14,6 +15,7 @@ REPO_URL="https://github.com/Siroshun09/agent-env.git"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/agent-env"
 OUT_DIR="${REPO_ROOT}/out"
 OUT_ISO="${OUT_DIR}/agent-env-debian-pc.iso"
+OUT_PASSWORD="${OUT_DIR}/agent-env-debian-pc.password"
 
 die() { echo "エラー: $*" >&2; exit 1; }
 log() { printf '\n==> %s\n' "$*"; }
@@ -62,13 +64,19 @@ if ! { [[ -f "${BASE_ISO}" ]] && verify; }; then
   verify || { rm -f "${BASE_ISO}"; die "ISO の SHA256 が一致しません"; }
 fi
 
+log "パスワード生成"
+# 記号を避けて入力しやすくする（英数字 20 文字 ≒ 119 bit）
+PASSWORD="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 20)"
+[[ ${#PASSWORD} -eq 20 ]] || die "パスワードを生成できませんでした"
+
 log "ISO の組み立て"
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 mkdir -p "${WORK}/initrd" "${WORK}/extra"
 
 # preseed: プレースホルダを埋めて initrd に入れる（/preseed.cfg は自動で読まれる）
-sed -e "s|@HUMAN_USER@|${HUMAN_USER}|g" "${ENV_DIR}/preseed.cfg" > "${WORK}/initrd/preseed.cfg"
+sed -e "s|@HUMAN_USER@|${HUMAN_USER}|g" -e "s|@PASSWORD@|${PASSWORD}|g" \
+  "${ENV_DIR}/preseed.cfg" > "${WORK}/initrd/preseed.cfg"
 ! grep -q '@[A-Z_]*@' "${WORK}/initrd/preseed.cfg" || die "preseed に未置換のプレースホルダがあります"
 
 xorriso -osirrox on -indev "${BASE_ISO}" \
@@ -121,7 +129,8 @@ EOF
 [[ -z "${SSH_KEY}" ]] || cp "${SSH_KEY}" "${WORK}/extra/authorized_keys"
 
 mkdir -p "${OUT_DIR}"
-rm -f "${OUT_ISO}"
+rm -f "${OUT_ISO}" "${OUT_PASSWORD}"
+(umask 077 && printf '%s\n' "${PASSWORD}" > "${OUT_PASSWORD}")
 xorriso -indev "${BASE_ISO}" -outdev "${OUT_ISO}" \
   -map "${WORK}/initrd.gz" /install.amd/initrd.gz \
   -map "${WORK}/grub.cfg.new" /boot/grub/grub.cfg \
@@ -130,6 +139,9 @@ xorriso -indev "${BASE_ISO}" -outdev "${OUT_ISO}" \
   -boot_image any replay 2>/dev/null
 
 log "完了: ${OUT_ISO}"
-echo "人間用ユーザー: ${HUMAN_USER}"
+echo "ユーザー:   ${HUMAN_USER}"
+echo "パスワード: ${PASSWORD}  （${OUT_PASSWORD} にも保存）"
+echo
 echo "USB メモリに書き込み、起動メニューで Enter を押すとインストールが始まります。"
-echo "インストール中に聞かれるのは、インストール先ディスクと ${HUMAN_USER} のパスワードだけです。"
+echo "インストール中に聞かれるのはインストール先ディスクだけです。"
+echo "パスワードをパスワードマネージャ等に保存したら、ISO とパスワードファイルは削除してください。"
