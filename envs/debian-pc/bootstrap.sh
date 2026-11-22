@@ -7,7 +7,7 @@
 set -euo pipefail
 
 ENV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AGENT_USER="${AGENT_USER:-agent}"
+AGENT_USER=agent
 
 log() { printf '\n==> %s\n' "$*"; }
 [[ $EUID -eq 0 ]] || { echo "root で実行してください" >&2; exit 1; }
@@ -24,16 +24,7 @@ if ! id "${AGENT_USER}" >/dev/null 2>&1; then
   useradd --create-home --shell /bin/bash "${AGENT_USER}"
 fi
 # sudo は付与しない。root が必要なもの（apt パッケージ等）はこのリポジトリに書く。
-
-# rootless podman 用の subuid/subgid。uidmap があれば useradd が割り当てるが、
-# uidmap より先にユーザーを作った場合などに備えて、無ければ既存範囲の後ろに追加する。
-for f in /etc/subuid /etc/subgid; do
-  touch "$f"
-  if ! grep -q "^${AGENT_USER}:" "$f"; then
-    start="$(awk -F: 'BEGIN { m = 100000 } { e = $2 + $3; if (e > m) m = e } END { print m }' "$f")"
-    echo "${AGENT_USER}:${start}:65536" >> "$f"
-  fi
-done
+# rootless podman 用の subuid/subgid は、uidmap が入っているので useradd が割り当てる。
 
 log "Debian の自動セキュリティ更新"
 # OS のパッチは unattended-upgrades で自動適用する。このリポジトリの変更は自動では反映しない（apply.sh で手動）

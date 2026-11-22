@@ -4,15 +4,12 @@
 #   1. GitHub から main を取得し、反映するコミット SHA と差分を表示する
 #   2. 「yes」と入力して承認したときだけ、fast-forward して bootstrap を実行する
 #      新しいコミットが無い場合も、承認すれば現在のコミットで bootstrap を再実行する（失敗後の再試行用）
-# - 対話端末から実行されていなければ、何も変更せずに失敗する
-# - 初回セットアップの完了後だけ実行できる。同時に実行できるのは1つだけ
-# - root 専用。agent ユーザーには sudo が無いので実行できない
-# - 反映前後のコミット SHA・bootstrap の出力・結果を /var/log/agent-env/apply.log に記録する
+# root 専用（agent ユーザーには sudo が無い）。非対話では何も変更せずに失敗する。
+# 反映前後のコミット SHA・bootstrap の出力・結果を /var/log/agent-env/apply.log に記録する。
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BOOTSTRAP="${REPO_ROOT}/envs/debian-pc/bootstrap.sh"
-BRANCH=main
 LOG_DIR=/var/log/agent-env
 LOG="${LOG_DIR}/apply.log"
 LOCK=/run/agent-env-apply.lock
@@ -22,7 +19,7 @@ die() { echo "NG: $*" >&2; exit 1; }
 [[ $EUID -eq 0 ]] || die "root で実行してください（sudo）"
 [[ -t 0 ]] || die "対話端末から実行してください。非対話では承認できないので反映しません"
 
-# 初回セットアップが成功してから使う。失敗し続けている場合の復旧は README（初回セットアップの復旧）を参照
+# 初回セットアップが成功してから使う（失敗し続けている場合の復旧は README を参照）
 [[ -e "${FIRSTBOOT_DONE}" ]] ||
   die "初回セットアップが完了していません（${FIRSTBOOT_DONE} がありません）。状況: journalctl -u agent-env-firstboot"
 
@@ -32,17 +29,14 @@ flock -n 9 || die "別の apply.sh が実行中です"
 
 cd "${REPO_ROOT}"
 [[ -z "$(git status --porcelain)" ]] || die "${REPO_ROOT} に未コミットの変更があります（git -C ${REPO_ROOT} status で確認）"
-current="$(git symbolic-ref --quiet --short HEAD || echo "(detached HEAD)")"
-[[ "${current}" == "${BRANCH}" ]] ||
-  die "${current} がチェックアウトされています。反映するのは ${BRANCH} だけです（切り替える場合: sudo git -C ${REPO_ROOT} switch ${BRANCH}）"
 
-git fetch --quiet origin "${BRANCH}"
+git fetch --quiet origin main
 prev="$(git rev-parse HEAD)"
-next="$(git rev-parse "origin/${BRANCH}")"
+next="$(git rev-parse origin/main)"
 git merge-base --is-ancestor "${prev}" "${next}" ||
-  die "origin/${BRANCH}（${next}）が現在のコミット（${prev}）の後継ではありません（履歴の書き換え）。反映しません"
+  die "origin/main（${next}）が現在のコミット（${prev}）の後継ではありません。反映しません（main の履歴の書き換えか、main に無いコミットから作った ISO でインストールした）"
 
-echo "リポジトリ: ${REPO_ROOT}（$(git remote get-url origin) ${BRANCH}）"
+echo "リポジトリ: ${REPO_ROOT}（$(git remote get-url origin) main）"
 echo "現在:       ${prev}"
 echo "反映:       ${next}"
 if [[ "${prev}" == "${next}" ]]; then

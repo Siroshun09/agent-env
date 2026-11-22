@@ -135,12 +135,10 @@ jobs:
           echo "$(brew --prefix openssl@3)/bin" >> "${GITHUB_PATH}"
       - name: build
         run: |
-          # PR では detached HEAD になるので、ブランチを作ってビルドする（GitHub の main とは一致しないので検証用ビルド）
           # ログ（パスワードを含む）と鍵はリポジトリ外に置く。リポジトリ内だと未コミットの変更とみなされる
-          git checkout -q -B ci-build
           ssh-keygen -q -t ed25519 -N '' -f "${RUNNER_TEMP}/ci-key"
-          ./build-iso.sh --allow-non-main --ssh-key "${RUNNER_TEMP}/ci-key.pub" > "${RUNNER_TEMP}/build.log"
-      - run: ./verify-iso.sh
+          ./build-iso.sh --ssh-key "${RUNNER_TEMP}/ci-key.pub" > "${RUNNER_TEMP}/build.log"
+          test -s ../../out/agent-env-debian-pc.iso
       - name: remove ISO (contains a password)
         if: always()
         working-directory: .

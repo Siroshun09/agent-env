@@ -1,21 +1,17 @@
 #!/usr/bin/env bash
 # 無人インストール用の Debian ISO を作る。root 不要。Linux / macOS で動く。
-# 人間用ユーザーのパスワードはランダムに生成し、表示して out/ に保存する（ISO にはハッシュだけを入れる）。
-# インストール先ディスクはインストール時に選ぶ。
+# 人間用ユーザー（owner、sudo あり）のパスワードはランダムに生成し、表示して out/ に保存する（ISO にはハッシュだけを入れる）。
+# 公開鍵を登録し、SSH のパスワードログインは無効にする。インストール先ディスクはインストール時に選ぶ。
+# ISO には HEAD のコミットを main として入れる。インストール後の apply.sh は GitHub の main からの
+# fast-forward しか受け付けないので、本番用は GitHub の main と同じコミットから作ること。
 #
-# 使い方: envs/debian-pc/build-iso.sh (--ssh-key ~/.ssh/id_ed25519.pub | --no-ssh-key) [--user owner] [--allow-non-main]
-#   --ssh-key         人間用ユーザーに登録する公開鍵。パスワードでの SSH ログインは無効になる。
-#   --no-ssh-key      鍵を登録しない（SSH はパスワードでログインする）。どちらかの指定が必須。
-#   --user            人間用ユーザー（sudo あり）の名前。既定は owner。root や admin などの予約名は使えない。
-#   --allow-non-main  検証用。main 以外のブランチや、GitHub の main と一致しないコミットからも作れる。
-#                     main 以外から作った PC では、apply.sh による反映はできない。
+# 使い方: envs/debian-pc/build-iso.sh --ssh-key ~/.ssh/id_ed25519.pub
 # 必要なもの: git, curl, xorriso, cpio, gzip, openssl（passwd -6 対応のもの。macOS 標準の LibreSSL は不可）
 #   macOS: brew install xorriso openssl（または build-iso-in-container.sh を使う）
 set -euo pipefail
 
 ENV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${ENV_DIR}/../.." && pwd)"
-REPO_URL="https://github.com/Siroshun09/agent-env.git"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/agent-env"
 OUT_DIR="${REPO_ROOT}/out"
 OUT_ISO="${OUT_DIR}/agent-env-debian-pc.iso"
@@ -24,32 +20,10 @@ OUT_PASSWORD="${OUT_DIR}/agent-env-debian-pc.password"
 die() { echo "エラー: $*" >&2; exit 1; }
 log() { printf '\n==> %s\n' "$*"; }
 
-HUMAN_USER="owner"
-SSH_KEY=""
-NO_SSH_KEY=0
-ALLOW_NON_MAIN=0
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --user) HUMAN_USER="$2"; shift 2 ;;
-    --ssh-key) SSH_KEY="$2"; shift 2 ;;
-    --no-ssh-key) NO_SSH_KEY=1; shift ;;
-    --allow-non-main) ALLOW_NON_MAIN=1; shift ;;
-    *) die "不明な引数: $1" ;;
-  esac
-done
-[[ "${HUMAN_USER}" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || die "--user は小文字英数字とハイフンで指定してください"
-# Debian のシステムアカウント・d-i の予約名・エージェント用ユーザー
-case "${HUMAN_USER}" in
-  root|daemon|bin|sys|sync|games|man|lp|mail|news|uucp|proxy|backup|list|irc|gnats|nobody|\
-  admin|adm|sudo|staff|users|operator|www-data|sshd|messagebus|avahi|polkitd|agent|systemd-*)
-    die "--user に ${HUMAN_USER} は使えません（予約名）" ;;
-esac
-if [[ -n "${SSH_KEY}" ]]; then
-  [[ -f "${SSH_KEY}" ]] || die "公開鍵が見つかりません: ${SSH_KEY}"
-  ! grep -q "PRIVATE KEY" "${SSH_KEY}" || die "秘密鍵が指定されています。.pub を指定してください"
-elif [[ "${NO_SSH_KEY}" -eq 0 ]]; then
-  die "--ssh-key で公開鍵を指定してください（鍵なしで作る場合は --no-ssh-key）"
-fi
+[[ $# -eq 2 && "$1" == --ssh-key ]] || die "使い方: $0 --ssh-key <公開鍵>"
+SSH_KEY="$2"
+[[ -f "${SSH_KEY}" ]] || die "公開鍵が見つかりません: ${SSH_KEY}"
+! grep -q "PRIVATE KEY" "${SSH_KEY}" || die "秘密鍵が指定されています。.pub を指定してください"
 for cmd in git curl xorriso cpio gzip openssl; do
   command -v "${cmd}" >/dev/null || die "${cmd} が必要です"
 done
@@ -63,21 +37,7 @@ log "リポジトリの状態確認"
 cd "${REPO_ROOT}"
 [[ -z "$(git status --porcelain)" ]] || die "未コミットの変更があります。ISO には commit 済みの内容しか入りません"
 [[ "$(git rev-parse --is-shallow-repository)" == false ]] || die "shallow clone では作れません。git fetch --unshallow してください"
-BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-[[ "${BRANCH}" != HEAD ]] || die "ブランチをチェックアウトしてください（detached HEAD）"
-# ブランチ名はインストーラが読む build.env に書くので、シェルで特別な意味を持つ文字を許さない
-[[ "${BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] || die "ブランチ名に使えない文字が含まれています: ${BRANCH}"
-# インストール後に apply.sh で反映できるのは main だけ。main 以外から作ると反映できないので明示を求める
-[[ "${BRANCH}" == main || "${ALLOW_NON_MAIN}" -eq 1 ]] ||
-  die "main 以外のブランチ（${BRANCH}）です。検証用に作る場合は --allow-non-main を付けてください"
-# 本番用は GitHub の main と同じコミットであること（未 push のコミットを入れない）
-if [[ "${ALLOW_NON_MAIN}" -eq 0 ]]; then
-  remote_main="$(git ls-remote "${REPO_URL}" refs/heads/main | cut -f1)"
-  [[ -n "${remote_main}" ]] || die "${REPO_URL} の main を取得できませんでした"
-  [[ "$(git rev-parse HEAD)" == "${remote_main}" ]] ||
-    die "HEAD が GitHub の main（${remote_main:0:7}）と一致しません。git pull するか、検証用なら --allow-non-main を付けてください"
-fi
-echo "${BRANCH} @ $(git rev-parse --short HEAD)"
+git log -1 --format='%h %s'
 
 log "Debian ISO ${DEBIAN_ISO_VERSION}"
 mkdir -p "${CACHE_DIR}"
@@ -110,7 +70,7 @@ trap 'rm -rf "${WORK}"' EXIT
 mkdir -p "${WORK}/initrd" "${WORK}/extra"
 
 # preseed: プレースホルダを埋めて initrd に入れる（/preseed.cfg は自動で読まれる）
-sed -e "s|@HUMAN_USER@|${HUMAN_USER}|g" -e "s|@PASSWORD_HASH@|${PASSWORD_HASH}|g" \
+sed -e "s|@PASSWORD_HASH@|${PASSWORD_HASH}|g" \
   "${ENV_DIR}/preseed.cfg" > "${WORK}/initrd/preseed.cfg"
 ! grep -q '@[A-Z_]*@' "${WORK}/initrd/preseed.cfg" || die "preseed に未置換のプレースホルダがあります"
 
@@ -137,6 +97,7 @@ awk -v args="${KERNEL_ARGS}" '
   }
   { print }' "${WORK}/grub.cfg" > "${WORK}/grub.cfg.new"
 grep -q 'agent-env: Automated install' "${WORK}/grub.cfg.new" || die "grub.cfg の書き換えに失敗しました"
+# isolinux（BIOS 起動）はこのエントリだけにする。timeout 0 は無期限待機
 cat > "${WORK}/isolinux.cfg.new" <<EOF
 default agentenv
 prompt 0
@@ -149,19 +110,13 @@ label agentenv
   append vga=788 initrd=/install.amd/initrd.gz ${KERNEL_ARGS}
 EOF
 
-# 安全確認: どちらの起動メニューも自動では進まない（キー入力を待つ）こと
+# 安全確認: 後続の設定で上書きされず、自動では進まない（キー入力を待つ）こと
 [[ "$(grep -E '^[[:space:]]*set timeout=' "${WORK}/grub.cfg.new" | tail -1)" == "set timeout=-1" ]] ||
   die "grub.cfg が無期限待機になっていません"
-grep -qx 'timeout 0' "${WORK}/isolinux.cfg.new" || die "isolinux.cfg が無期限待機になっていません"
 
-git bundle create "${WORK}/extra/repo.bundle" "${BRANCH}" 2>/dev/null
+git bundle create "${WORK}/extra/repo.bundle" HEAD 2>/dev/null
 cp "${ENV_DIR}/late-command.sh" "${ENV_DIR}/select-disk.sh" "${WORK}/extra/"
-cat > "${WORK}/extra/build.env" <<EOF
-HUMAN_USER='${HUMAN_USER}'
-REPO_URL='${REPO_URL}'
-REPO_BRANCH='${BRANCH}'
-EOF
-[[ -z "${SSH_KEY}" ]] || cp "${SSH_KEY}" "${WORK}/extra/authorized_keys"
+cp "${SSH_KEY}" "${WORK}/extra/authorized_keys"
 
 mkdir -p "${OUT_DIR}"
 rm -f "${OUT_ISO}" "${OUT_PASSWORD}"
@@ -174,9 +129,9 @@ xorriso -indev "${BASE_ISO}" -outdev "${OUT_ISO}" \
   -boot_image any replay 2>/dev/null
 
 log "完了: out/$(basename "${OUT_ISO}")"
-echo "ユーザー:   ${HUMAN_USER}"
+echo "ユーザー:   owner"
 echo "パスワード: ${PASSWORD}  （out/$(basename "${OUT_PASSWORD}") にも保存）"
 echo
-echo "USB メモリに書き込み（macOS: envs/debian-pc/write-usb.sh）、起動メニューで Enter を押すとインストールが始まります。"
+echo "USB メモリに書き込み（macOS: envs/debian-pc/write-usb.sh）、PC を USB から起動してメニューで Enter を押すとインストールが始まります。"
 echo "インストール中に聞かれるのはインストール先ディスクの選択と確認だけです。"
-echo "パスワードをパスワードマネージャ等に保存したら、パスワードファイルは削除してください（ISO にはハッシュだけが入っています）。"
+echo "パスワードをパスワードマネージャーに保存したら、パスワードファイルは削除してください（ISO にはハッシュだけが入っています）。"

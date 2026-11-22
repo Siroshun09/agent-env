@@ -1,119 +1,96 @@
 # agent-env
 
-エージェント専用の作業環境を、再現可能かつ使い捨て可能な形でセットアップする。
+エージェント専用 PC を、いつでも作り直せる形でセットアップするためのリポジトリです。
 
-## 責務
-このリポジトリが管理するのは **PC 側（root 権限の領域）** まで。
+## 対象範囲
+このリポジトリでは、root 権限が必要な PC 側の設定だけを扱います。エージェント自身の環境は、別のリポジトリで管理します。
 
-| 管理する | 管理しない（agent 側の別リポジトリで管理） |
+| このリポジトリ | 別リポジトリ（agent 側） |
 |---|---|
-| OS インストール、パーティション | Claude Code などエージェント本体 |
-| ユーザー分離（人間用 / `agent`） | 言語ツール（mise 等）とそのバージョン |
-| 基本パッケージ、podman | シェル設定、秘密情報の読み込み |
-| Debian のセキュリティ更新（自動）、このリポジトリの反映（手動） | エージェントの作業データ |
+| OS のインストールとパーティション | Claude Code などのエージェント本体 |
+| ユーザーの分離（人間用の `owner` / エージェント用の `agent`） | 言語ツール（mise など）とそのバージョン |
+| 基本パッケージと podman | シェル設定、秘密情報の読み込み |
+| OS の更新設定 | エージェントの作業データ |
 
-`agent` には sudo が無いので、エージェントのツールが前提とする OS パッケージ（apt）は `envs/<name>/packages.txt` に追加する。
+`agent` には sudo 権限がありません。エージェントのツールに apt パッケージが必要な場合は、`envs/debian-pc/packages.txt` に追加してください。
 
 ## 方針
-- **環境は使い捨て、状態はリポジトリと外部に置く。** 作り直しは「ISO で再インストール」の1手順。
-- 人間用ユーザーとエージェント用ユーザー（`agent`、sudo なし）を分ける。
-- 秘密情報はリポジトリに入れない。
+- PC は使い捨てにし、状態はリポジトリと外部に置きます。作り直すときは ISO から再インストールするだけです。
+- 人間用ユーザーとエージェント用ユーザーを分け、エージェントには sudo 権限を与えません。
+- 秘密情報はリポジトリに入れません。ISO にはパスワードのハッシュと SSH 公開鍵が入るため、CI でも ISO は公開しません。
 
 ## 構成
 ```
-envs/<name>/            OS・環境ごと
-  debian-pc/            Debian 13 の実 PC
-    build-iso.sh        無人インストール ISO を作る
-    build-iso-in-container.sh  上記を使い捨てコンテナ内で実行する
-    verify-iso.sh       生成した ISO の中身を検査する
-    write-usb.sh        ISO を USB メモリに書き込む（macOS）
-    preseed.cfg         インストーラの応答（テンプレート）
-    select-disk.sh      インストール先ディスクの選択画面
-    late-command.sh     インストール直後の処理（リポジトリ配置、初回起動の設定）
-    bootstrap.sh        root 権限のセットアップ（初回起動時と apply.sh から実行。冪等）
-    apply.sh            main の変更を確認・承認して手動で反映する
-    packages.txt        基本パッケージ
-    system/             systemd ユニット、apt 設定
-out/                    生成物（.gitignore）
-.github/workflows/
-  lint.yml              リポジトリ全体の静的検査（shellcheck、actionlint、zizmor）
-  env-<name>.yml        環境ごとの検査（envs/<name>/ の変更時に実行）
+envs/debian-pc/                Debian 13 の実 PC
+  build-iso-in-container.sh    ISO を作り、USB メモリに書き込む（通常はこれを実行する）
+  build-iso.sh                 ISO を作る（コンテナ内で実行される）
+  write-usb.sh                 ISO を USB メモリに書き込む（macOS 専用）
+  preseed.cfg                  インストーラへの応答
+  select-disk.sh               インストール先ディスクの選択画面
+  late-command.sh              インストールの最後に、リポジトリと SSH を設定する
+  bootstrap.sh                 PC をセットアップする（冪等）
+  apply.sh                     main の変更を、確認・承認したうえで PC に反映する
+  packages.txt                 インストールするパッケージ
+  system/                      systemd ユニットと apt の設定
+.github/workflows/             CI（静的検査、ISO のビルド、bootstrap と apply.sh のテスト）
 ```
 
-CI はビルドが通ることの検査だけを行う。ISO にはパスワードのハッシュと SSH 公開鍵が入るため、成果物としては公開しない。
-
-新しい OS・環境は `envs/<name>/` と、その検査用の `.github/workflows/env-<name>.yml` を追加する。
-
-## 環境
-
-### debian-pc
-手作業は「ISO 作成と USB 書き込み（1コマンド）→ 起動して Enter → インストール先ディスクの選択と確認」だけ。
-
-1. ISO を作り、USB メモリに書き込む。ビルドは使い捨てのコンテナ内で行うので、ホストにツールを入れる必要はない。
+## インストール
+1. Mac で GitHub の `main` をチェックアウトし、USB メモリを挿して次を実行します。
    ```bash
    envs/debian-pc/build-iso-in-container.sh
    ```
-   - コンテナランタイムは Apple の `container`（macOS 26+、事前に `container system start`）、`docker`、`podman` の順に自動で選ぶ。
-   - コンテナを使わない場合は `envs/debian-pc/build-iso.sh` を直接実行する（`git`, `curl`, `xorriso`, `cpio`, `gzip`, `passwd -6` に対応した `openssl` が必要。macOS 標準の LibreSSL は不可）。
-   - Debian ISO のダウンロードは `out/cache/` にキャッシュされる。
-   - 人間用ユーザー（sudo あり、既定名 `owner`）のパスワードはランダムに生成され、表示と `out/agent-env-debian-pc.password` への保存が行われる。ISO にはハッシュ（SHA-512 crypt）だけが入る。パスワードマネージャ等に保存したら、パスワードファイルは削除する。
-   - `--user` で人間用ユーザーの名前を変えられる（`admin` は Debian の予約名で使えない）。
-   - SSH 公開鍵（既定は `~/.ssh/id_ed25519.pub` → `id_ecdsa.pub` → `id_rsa.pub` の順に自動検出、`--ssh-key` で指定可）が人間用ユーザーに登録され、SSH のパスワードログインは無効になる。鍵が無ければ中断する（鍵なしで作るなら `--no-ssh-key`）。
-   - 本番用の ISO は、GitHub の `main` と同じコミットをチェックアウトしているときだけ作れる（インストール後に反映できるのは `main` だけのため）。検証用に別ブランチや未 push のコミットから作るには `--allow-non-main` が必要で、`main` 以外から作った PC では `apply.sh` による反映はできない。
-   - ISO には commit 済みの内容が入る（未コミットの変更があると中断する）。
-   - macOS ではビルド後に続けて USB メモリへの書き込みに進む（`write-usb.sh`）。外付けの物理ディスクだけを容量・接続方式・名前付きで一覧し、書き込み先のディスク名（例: `disk4`）と確認の `ERASE disk4` を入力すると、書き込み直前に同じディスクであることを再確認したうえで消去・書き込み・読み戻し検証・取り出しまで行う（sudo のパスワードが必要）。書き込みだけやり直すときは `envs/debian-pc/write-usb.sh`、書き込まない場合は `--no-write`。
-2. USB メモリを PC に挿す。
-3. PC を USB から起動し、メニュー先頭の `agent-env: Automated install (ERASES DISK)` で Enter を押す。
-   - 誤って再インストールしないよう、メニューは自動では進まない。
-4. インストール先ディスクを一覧（容量・接続方式・モデル・シリアル番号）から選び、確認画面で `Yes` を選ぶ（既定は `No` で一覧に戻る。選んだディスクは全消去される）。インストールメディア自身は一覧に出ない。以降は無人で進み、再起動する。
-5. 初回起動時に `agent-env-firstboot.service` が bootstrap を実行する（失敗時は 60 秒ごとに再試行）。進捗は `journalctl -fu agent-env-firstboot`。
-6. `sudo -iu agent` で入り、agent 側の環境（別リポジトリ）をセットアップする。
+   ISO の作成から USB メモリへの書き込みまでを行います。
+   - ビルドはコンテナ内で行うため、Mac にツールを入れる必要はありません。Apple の `container`、`docker`、`podman` のいずれかが必要です（`container` の場合は、先に `container system start` を実行してください）。
+   - 人間用ユーザー `owner` のパスワードはランダムに生成され、画面と `out/agent-env-debian-pc.password` に出力されます。パスワードマネージャーに保存したら、このファイルは削除してください。
+   - SSH 公開鍵（`~/.ssh/id_ed25519.pub` などを自動で探します。`--ssh-key` で指定も可能）が `owner` に登録されます。SSH のパスワードログインは無効です。
+   - 書き込み先の候補には外付けディスクだけが表示されます。ディスク名（例: `disk4`）を入力し、確認のため `ERASE disk4` と入力すると書き込みが始まります。書き込み後は内容を検証し、USB メモリを取り出します。
+   - ISO には現在のコミットが入ります。未コミットの変更がある場合は中断します。`main` 以外のコミットから作った PC には、あとで `apply.sh` で変更を反映できません。
+   - 書き込みだけをやり直す場合は `envs/debian-pc/write-usb.sh` を実行します。書き込みを省く場合は `--no-write` を付けます。
+2. PC を USB メモリから起動し、メニューの `agent-env: Automated install (ERASES DISK)` を選んで Enter を押します。誤って再インストールしないよう、メニューは自動では進みません。
+3. 一覧からインストール先のディスクを選び、確認画面で `Yes` を選びます（既定は `No`）。選んだディスクのデータはすべて消去されます。USB メモリ自体は一覧に表示されません。この後は自動で進みます。
+4. 初回起動時に bootstrap が自動で実行されます。失敗した場合は 60 秒ごとに再試行します。進み具合は `journalctl -fu agent-env-firstboot` で確認できます。
+5. `sudo -iu agent` でエージェント用ユーザーに切り替え、agent 側のリポジトリでセットアップします。
 
-リポジトリは `/opt/agent-env` に配置される。
-
-#### Mac からの接続
-ホスト名 `agent-box` を mDNS（avahi）で公開するので、同じ LAN の Mac から IP を調べずに接続できる。root ログインは無効。
+## Mac からの接続
+PC は `agent-box.local` という名前で LAN 内に公開されます。`~/.ssh/config` に次を追加すると、`ssh agent-box` で接続できます。
 ```
-# ~/.ssh/config
 Host agent-box
   HostName agent-box.local
   User owner
 ```
-```bash
-ssh agent-box
-```
-- 再インストールするとホスト鍵が変わる。`ssh-keygen -R agent-box.local` で古い鍵を消し、初回接続時に表示される fingerprint を PC のコンソール（ログイン画面に `SSH host key:` として表示される）と照合する。
-- エージェントとして作業するときは `ssh agent-box` 後に `sudo -iu agent`。
+再インストールすると SSH のホスト鍵が変わります。`ssh-keygen -R agent-box.local` で古い鍵を削除し、初回接続時に表示される fingerprint が、PC のログイン画面に表示される `SSH host key:` と一致することを確認してください。
 
-#### 運用（更新と反映）
-| 対象 | 仕組み | タイミング |
-|---|---|---|
-| Debian のセキュリティ更新・安定版更新 | `unattended-upgrades` | 自動（毎日）。再起動が必要なら 04:30 に自動再起動（ログイン中のユーザーがいれば再起動しない） |
-| このリポジトリの変更（パッケージ・設定） | 管理者が `apply.sh` を実行して反映 | 手動のみ |
+## 更新
+### Debian の更新（自動）
+セキュリティ更新などは `unattended-upgrades` が毎日自動で適用します。再起動が必要な場合は 04:30 に自動で再起動しますが、ログイン中のユーザーがいるときは再起動しません。その場合は `/run/reboot-required` が残るので、作業の区切りで `sudo reboot` してください。
 
-`main` へのマージだけでは PC は変わらない。PC への反映は、管理者が内容を確認して承認する最終ステップとして分けている。
+### このリポジトリの変更（手動）
+`main` にマージしただけでは PC は変わりません。PC に反映するには、管理者が次を実行します。
 ```bash
 ssh -t agent-box sudo /opt/agent-env/envs/debian-pc/apply.sh
 ```
-1. GitHub から `main` を取得し、現在と反映先のコミット SHA、コミット一覧、差分を表示する。
-2. `yes` と入力したときだけ fast-forward して bootstrap を root で実行する。それ以外の入力や、端末を伴わない実行（`ssh agent-box sudo ...` のように `-t` なし、cron 等）では何も変更せずに終了する。
-3. 新しいコミットが無い場合も、承認すれば現在のコミットで bootstrap を再実行する。
+反映するコミットの SHA、コミット一覧、差分が表示されます。内容を確認して `yes` と入力した場合だけ、そのコミットに更新して bootstrap を実行します。新しいコミットがない場合も、`yes` と入力すれば bootstrap を再実行できます。
 
-- 反映できるのは `main` だけ。未コミットの変更がある場合や、`main` の履歴が書き換えられて fast-forward できない場合は中断する。
-- 初回セットアップ（`agent-env-firstboot`）が成功するまでは実行できない（`/var/lib/agent-env/firstboot.done` で判定）。
-- 同時に実行できるのは1つだけ。別の端末で実行中なら即座に中断する（承認していないコミットが実行されないように、表示から bootstrap 完了までを排他にしている）。
-- root 専用。`agent` には sudo が無いので反映できない。
-- 反映前後のコミット SHA、承認したユーザー、bootstrap の出力と結果を `/var/log/agent-env/apply.log` に記録する（`grep -E ' (START|OK|NG) ' /var/log/agent-env/apply.log` で履歴を確認できる）。
+次の場合は、何も変更せずに終了します。
+- `yes` 以外を入力した
+- 端末がない（`ssh` に `-t` を付けていない、cron から実行した など）
+- 初回セットアップが完了していない
+- 別の `apply.sh` が実行中である
+- `/opt/agent-env` に未コミットの変更がある
+- PC のコミットが `main` の履歴に含まれていない
 
-bootstrap が失敗した場合は失敗として終了し、自動では元に戻さない（OS 設定の完全なロールバックは保証できないため）。リポジトリは失敗したコミットのまま残るので、`git -C /opt/agent-env log -1` とログで原因を確認し、修正（または revert）を `main` にマージしてから再度 `apply.sh` を実行する。一時的な失敗なら、そのまま再実行すればよい（bootstrap は冪等）。
+実行結果（反映前後の SHA、実行したユーザー、bootstrap の出力と結果）は `/var/log/agent-env/apply.log` に記録されます。履歴は `grep -E ' (START|OK|NG) ' /var/log/agent-env/apply.log` で確認できます。
 
-`main` にはブランチ保護と必須チェックを設定しておく。
+bootstrap が失敗した場合、変更は自動では元に戻りません。PC は失敗したコミットのままになるので、修正（または revert）を `main` にマージしてから、もう一度 `apply.sh` を実行してください。ネットワーク障害などの一時的な失敗であれば、そのまま再実行すれば直ります。
 
-初回セットアップの復旧: `agent-env-firstboot` は失敗すると 60 秒ごとに再試行し続ける（`journalctl -u agent-env-firstboot` で確認）。リポジトリ側の不具合が原因なら、修正を `main` にマージしてから次を実行する。
+`main` にはブランチ保護を設定し、CI の成功をマージの条件にしておいてください。
+
+### 初回セットアップが失敗し続ける場合
+原因の修正を `main` にマージしてから、次を実行します。
 ```bash
 ssh -t agent-box 'sudo systemctl stop agent-env-firstboot && sudo git -C /opt/agent-env pull --ff-only origin main && sudo systemctl start agent-env-firstboot'
 ```
 
-ログイン中は自動再起動しないので、`/run/reboot-required` があれば作業の区切りで `sudo reboot` する。自動再起動を完全に止めたい場合は `envs/debian-pc/system/apt/52agent-env-unattended-upgrades` の `Automatic-Reboot` を `false` にする。
-
-Debian ISO のバージョンは `envs/debian-pc/iso.conf` で固定している。
+### Debian のバージョン
+ベースにする Debian ISO のバージョンは `envs/debian-pc/iso.conf` で固定しています。
