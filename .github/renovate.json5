@@ -27,6 +27,17 @@
       datasourceTemplate: 'custom.debian-netinst',
       versioningTemplate: 'semver-coerced',
     },
+    {
+      description: 'bootstrap.sh が npm レジストリから取得するツール（直前の "# renovate:" コメントで対象を指定し、*_INTEGRITY も一緒に更新）',
+      customType: 'regex',
+      managerFilePatterns: [
+        '/^envs/debian-pc/tools\\.conf$/',
+      ],
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\w+_VERSION=(?<currentValue>\\S+)\\n\\w+_INTEGRITY=(?<currentDigest>sha512-[A-Za-z0-9+/=]+)',
+      ],
+      versioningTemplate: 'semver',
+    },
   ],
   customDatasources: {
     'debian-netinst': {
@@ -35,6 +46,14 @@
       format: 'plain',
       transformTemplates: [
         '{"releases": [releases[$contains(version, /  debian-[0-9.]+-amd64-netinst\\.iso$/)].{"version": $match(version, /debian-([0-9.]+)-amd64/).groups[0], "digest": $substringBefore(version, " ")}]}',
+      ],
+    },
+    'npm-integrity': {
+      // npm のパッケージ情報から、各バージョンの公開日時と integrity（SHA-512）を取り出す
+      defaultRegistryUrlTemplate: 'https://registry.npmjs.org/{{packageName}}',
+      format: 'json',
+      transformTemplates: [
+        '{"releases": $each(versions, function($v, $k) { {"version": $k, "digest": $v.dist.integrity, "releaseTimestamp": $lookup($$.time, $k)} })}',
       ],
     },
   },

@@ -1,0 +1,7 @@
+# Claude Code（Anthropic 公式。stable チャンネルは約 1 週間遅れで、大きな不具合のあるリリースを飛ばす）
+# 鍵の fingerprint: 31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE（https://code.claude.com/docs/en/setup）
+Types: deb
+URIs: https://downloads.claude.ai/claude-code/apt/stable
+Suites: stable
+Components: main
+Signed-By: /etc/apt/keyrings/claude-code.asc

@@ -1,0 +1,7 @@
+# mise（言語ツールのバージョン管理。各プロジェクトの mise.toml に従ってツールを入れる）
+# 鍵の fingerprint: 24853EC9F655CE80B48E6C3A8B81C9D17413A06D（https://mise.jdx.dev/installing-mise.html）
+Types: deb
+URIs: https://mise.jdx.dev/deb
+Suites: stable
+Components: main
+Signed-By: /etc/apt/keyrings/mise.asc
