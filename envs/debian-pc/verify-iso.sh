@@ -30,8 +30,12 @@ grep -qx 'timeout 0' "${WORK}/isolinux.cfg" || fail "isolinux が無期限待機
 gzip -dc "${WORK}/initrd.gz" 2>/dev/null > "${WORK}/initrd" || true
 grep -aq 'partman/early_command string sh /cdrom/agent-env/select-disk.sh' "${WORK}/initrd" ||
   fail "preseed が initrd に入っていません"
-grep -aq 'd-i passwd/user-password password [A-Za-z0-9]\{20\}$' "${WORK}/initrd" ||
-  fail "パスワードが埋め込まれていません"
+# shellcheck disable=SC2016 # $6$ は crypt の書式で、展開しない
+grep -aq 'd-i passwd/user-password-crypted password \$6\$[./A-Za-z0-9]*\$[./A-Za-z0-9]\{86\}$' "${WORK}/initrd" ||
+  fail "パスワードのハッシュが埋め込まれていません"
+# 平文パスワードは ISO に入れない
+! grep -aq 'passwd/user-password password\|passwd/user-password-again' "${WORK}/initrd" ||
+  fail "平文パスワードの設定が含まれています"
 ! grep -aq 'string @[A-Z_]*@\|password @[A-Z_]*@' "${WORK}/initrd" || fail "未置換のプレースホルダがあります"
 
 echo "OK: ${ISO}"

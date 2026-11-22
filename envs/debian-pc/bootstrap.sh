@@ -12,6 +12,8 @@ AGENT_USER="${AGENT_USER:-agent}"
 
 log() { printf '\n==> %s\n' "$*"; }
 [[ $EUID -eq 0 ]] || { echo "root で実行してください" >&2; exit 1; }
+# 初回セットアップ・毎日の更新・手動実行が同時に動かないようにする（update.sh と同じロック）
+[[ -n "${AGENT_ENV_LOCKED:-}" ]] || exec env AGENT_ENV_LOCKED=1 flock /run/agent-env.lock "$0" "$@"
 
 log "apt パッケージ"
 export DEBIAN_FRONTEND=noninteractive
@@ -49,5 +51,12 @@ if command -v systemctl >/dev/null 2>&1; then
     systemctl enable agent-env-update.timer # chroot 等、systemd が動いていない場合
   fi
 fi
+
+log "SSH ホスト鍵の fingerprint をコンソールのログイン画面に表示"
+# 再インストールでホスト鍵が変わるので、初回接続時にこの表示と照合する
+mkdir -p /etc/issue.d
+for k in /etc/ssh/ssh_host_*_key.pub; do
+  if [[ -f "$k" ]]; then ssh-keygen -lf "$k"; fi
+done | sed 's/^/SSH host key: /' > /etc/issue.d/agent-env-ssh.issue
 
 log "完了"

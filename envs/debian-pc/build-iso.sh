@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # 無人インストール用の Debian ISO を作る。root 不要。Linux / macOS で動く。
-# 人間用ユーザーのパスワードはランダムに生成し、表示して out/ に保存する。インストール先ディスクはインストール時に選ぶ。
-# ISO と out/ にはパスワードが平文で入るので、共有しないこと（out/ は .gitignore 済み）。
+# 人間用ユーザーのパスワードはランダムに生成し、表示して out/ に保存する（ISO にはハッシュだけを入れる）。
+# インストール先ディスクはインストール時に選ぶ。
 #
-# 使い方: envs/debian-pc/build-iso.sh [--user owner] [--ssh-key ~/.ssh/id_ed25519.pub]
-#   --user     人間用ユーザー（sudo あり）の名前。既定は owner。admin など Debian の予約名は使えない。
-#   --ssh-key  人間用ユーザーに登録する公開鍵。指定するとパスワードでの SSH ログインを無効化する。
-# 必要なもの: git, curl, xorriso, cpio, gzip（macOS: brew install xorriso）
+# 使い方: envs/debian-pc/build-iso.sh (--ssh-key ~/.ssh/id_ed25519.pub | --no-ssh-key) [--user owner] [--allow-non-main]
+#   --ssh-key         人間用ユーザーに登録する公開鍵。パスワードでの SSH ログインは無効になる。
+#   --no-ssh-key      鍵を登録しない（SSH はパスワードでログインする）。どちらかの指定が必須。
+#   --user            人間用ユーザー（sudo あり）の名前。既定は owner。root や admin などの予約名は使えない。
+#   --allow-non-main  main 以外のブランチから作る（検証用）。インストール後の自動更新は main 以外では停止する。
+# 必要なもの: git, curl, xorriso, cpio, gzip, openssl（passwd -6 対応のもの。macOS 標準の LibreSSL は不可）
+#   macOS: brew install xorriso openssl（または build-iso-in-container.sh を使う）
 set -euo pipefail
 
 ENV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,20 +25,35 @@ log() { printf '\n==> %s\n' "$*"; }
 
 HUMAN_USER="owner"
 SSH_KEY=""
+NO_SSH_KEY=0
+ALLOW_NON_MAIN=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --user) HUMAN_USER="$2"; shift 2 ;;
     --ssh-key) SSH_KEY="$2"; shift 2 ;;
+    --no-ssh-key) NO_SSH_KEY=1; shift ;;
+    --allow-non-main) ALLOW_NON_MAIN=1; shift ;;
     *) die "不明な引数: $1" ;;
   esac
 done
 [[ "${HUMAN_USER}" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || die "--user は小文字英数字とハイフンで指定してください"
-[[ "${HUMAN_USER}" != agent ]] || die "--user に agent は使えません（エージェント用に予約）"
-[[ -z "${SSH_KEY}" ]] || [[ -f "${SSH_KEY}" ]] || die "公開鍵が見つかりません: ${SSH_KEY}"
-[[ -z "${SSH_KEY}" ]] || ! grep -q "PRIVATE KEY" "${SSH_KEY}" || die "秘密鍵が指定されています。.pub を指定してください"
-for cmd in git curl xorriso cpio gzip; do
+# Debian のシステムアカウント・d-i の予約名・エージェント用ユーザー
+case "${HUMAN_USER}" in
+  root|daemon|bin|sys|sync|games|man|lp|mail|news|uucp|proxy|backup|list|irc|gnats|nobody|\
+  admin|adm|sudo|staff|users|operator|www-data|sshd|messagebus|avahi|polkitd|agent|systemd-*)
+    die "--user に ${HUMAN_USER} は使えません（予約名）" ;;
+esac
+if [[ -n "${SSH_KEY}" ]]; then
+  [[ -f "${SSH_KEY}" ]] || die "公開鍵が見つかりません: ${SSH_KEY}"
+  ! grep -q "PRIVATE KEY" "${SSH_KEY}" || die "秘密鍵が指定されています。.pub を指定してください"
+elif [[ "${NO_SSH_KEY}" -eq 0 ]]; then
+  die "--ssh-key で公開鍵を指定してください（鍵なしで作る場合は --no-ssh-key）"
+fi
+for cmd in git curl xorriso cpio gzip openssl; do
   command -v "${cmd}" >/dev/null || die "${cmd} が必要です"
 done
+openssl passwd -6 -salt agentenv x >/dev/null 2>&1 ||
+  die "この openssl は passwd -6 に対応していません（macOS: brew install openssl で入る openssl を PATH の先頭に置く）"
 
 # shellcheck source=/dev/null
 . "${ENV_DIR}/iso.conf"
@@ -46,6 +64,11 @@ cd "${REPO_ROOT}"
 [[ "$(git rev-parse --is-shallow-repository)" == false ]] || die "shallow clone では作れません。git fetch --unshallow してください"
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 [[ "${BRANCH}" != HEAD ]] || die "ブランチをチェックアウトしてください（detached HEAD）"
+# ブランチ名はインストーラが読む build.env に書くので、シェルで特別な意味を持つ文字を許さない
+[[ "${BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] || die "ブランチ名に使えない文字が含まれています: ${BRANCH}"
+# インストール後の自動更新は main を追従する。main 以外から作ると自動更新が止まるので明示を求める
+[[ "${BRANCH}" == main || "${ALLOW_NON_MAIN}" -eq 1 ]] ||
+  die "main 以外のブランチ（${BRANCH}）です。検証用に作る場合は --allow-non-main を付けてください"
 echo "${BRANCH} @ $(git rev-parse --short HEAD)"
 
 log "Debian ISO ${DEBIAN_ISO_VERSION}"
@@ -69,6 +92,9 @@ log "パスワード生成"
 # （tr | head だと SIGPIPE で pipefail に引っかかるので、有限の入力から切り出す）
 PASSWORD="$(head -c 1024 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | cut -c 1-20)"
 [[ ${#PASSWORD} -eq 20 ]] || die "パスワードを生成できませんでした"
+# ISO には SHA-512 crypt のハッシュだけを入れる（平文は out/ のファイルと画面表示のみ）
+PASSWORD_HASH="$(printf '%s' "${PASSWORD}" | openssl passwd -6 -stdin)"
+[[ "${PASSWORD_HASH}" =~ ^\$6\$[./A-Za-z0-9]+\$[./A-Za-z0-9]{86}$ ]] || die "パスワードのハッシュを生成できませんでした"
 
 log "ISO の組み立て"
 WORK="$(mktemp -d)"
@@ -76,7 +102,7 @@ trap 'rm -rf "${WORK}"' EXIT
 mkdir -p "${WORK}/initrd" "${WORK}/extra"
 
 # preseed: プレースホルダを埋めて initrd に入れる（/preseed.cfg は自動で読まれる）
-sed -e "s|@HUMAN_USER@|${HUMAN_USER}|g" -e "s|@PASSWORD@|${PASSWORD}|g" \
+sed -e "s|@HUMAN_USER@|${HUMAN_USER}|g" -e "s|@PASSWORD_HASH@|${PASSWORD_HASH}|g" \
   "${ENV_DIR}/preseed.cfg" > "${WORK}/initrd/preseed.cfg"
 ! grep -q '@[A-Z_]*@' "${WORK}/initrd/preseed.cfg" || die "preseed に未置換のプレースホルダがあります"
 

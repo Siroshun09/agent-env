@@ -48,6 +48,7 @@ if [[ -z "${SSH_KEY}" && "${NO_SSH_KEY}" -eq 0 ]]; then
   done
   [[ -n "${SSH_KEY}" ]] || die "SSH 公開鍵が見つかりません。--ssh-key で指定してください（鍵なしで作る場合は --no-ssh-key）"
 fi
+[[ "${NO_SSH_KEY}" -eq 0 ]] || ARGS+=(--no-ssh-key)
 SSH_KEY_CONTENT=""
 if [[ -n "${SSH_KEY}" ]]; then
   [[ -f "${SSH_KEY}" ]] || die "公開鍵が見つかりません: ${SSH_KEY}"
@@ -73,7 +74,7 @@ exec "${RUNTIME}" run --rm ${TTY[@]+"${TTY[@]}"} \
   "${IMAGE}" bash -euo pipefail -c '
     apt-get update -qq
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-      ca-certificates curl git xorriso cpio gzip >/dev/null
+      ca-certificates curl git xorriso cpio gzip openssl >/dev/null
     git config --global --add safe.directory /work
     [ -z "${SSH_KEY_CONTENT}" ] || printf "%s\n" "${SSH_KEY_CONTENT}" > /tmp/ssh-key.pub
     # 終了時に生成物の所有者をホストのユーザーに戻す（Linux ホスト向け。macOS では不要）

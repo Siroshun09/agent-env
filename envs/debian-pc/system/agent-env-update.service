@@ -4,6 +4,9 @@
 Description=agent-env daily update
 Wants=network-online.target
 After=network-online.target
+# 初回セットアップ（agent-env-firstboot）が完了するまでは動かさない
+ConditionPathExists=/var/lib/agent-env/firstboot.done
+After=agent-env-firstboot.service
 
 [Service]
 Type=oneshot
