@@ -11,16 +11,22 @@ permissions:
 
 jobs:
   shellcheck:
-    runs-on: ubuntu-24.04
+    # shellcheck はプリインストール済みなので軽量 runner で足りる
+    runs-on: ubuntu-slim
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: shellcheck envs/*/*.sh
 
   bootstrap:
     # Debian 13 コンテナで bootstrap を2回実行し、冪等に成功することを確認する
+    # （docker デーモンが必要なので ubuntu-slim は使えない）
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: |
           docker run --rm -v "$PWD:/opt/agent-env:ro" debian:trixie bash -euo pipefail -c '
             /opt/agent-env/envs/debian-pc/bootstrap.sh
@@ -31,12 +37,14 @@ jobs:
           '
 
   build-iso:
+    # apt install と約 800 MB の ISO 処理があるので ubuntu-slim（1 CPU・15 分制限）は使わない
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0 # ISO に同梱する git bundle に履歴が必要
-      - uses: actions/cache@v4
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/agent-env
           key: debian-iso-${{ hashFiles('envs/debian-pc/iso.conf') }}
