@@ -1,4 +1,3 @@
-<!-- agent-env が /etc/claude-code/CLAUDE.md に配置し、Claude Code と OpenCode の両方が読む。手で編集せずリポジトリ側を直すこと。 -->
 # この PC のローカル LLM
 
 この PC では llama.cpp の llama-server が `http://127.0.0.1:8080/v1`（OpenAI 互換、認証なし）で動いている。PC の外にデータを出さずに、費用をかけずに使える。適切な場面では積極的に使うこと。ただし、あなた自身がローカル LLM（`llama-cpp/...`）として動いている場合は、この節は無視してよい。
