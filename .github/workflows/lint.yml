@@ -6,11 +6,13 @@ on:
     paths:
       - "**.sh"
       - ".github/workflows/**"
+      - ".github/renovate.json5"
   push:
     branches: [main]
     paths:
       - "**.sh"
       - ".github/workflows/**"
+      - ".github/renovate.json5"
 
 permissions:
   contents: read
@@ -20,8 +22,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ACTIONLINT_VERSION: 1.7.12
+  # renovate: datasource=github-release-attachments depName=rhysd/actionlint
+  ACTIONLINT_VERSION: v1.7.12
   ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+  # renovate: datasource=pypi depName=zizmor
   ZIZMOR_VERSION: 1.32.0
 
 jobs:
@@ -45,10 +49,23 @@ jobs:
           persist-credentials: false
       - name: actionlint
         run: |
-          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
+          tarball="actionlint_${ACTIONLINT_VERSION#v}_linux_amd64.tar.gz"
+          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/${ACTIONLINT_VERSION}/${tarball}"
           echo "${ACTIONLINT_SHA256}  ${tarball}" | sha256sum -c -
           tar -xzf "${tarball}" actionlint
           ./actionlint
       - name: zizmor
         run: pipx run "zizmor==${ZIZMOR_VERSION}" --offline --format=github .github/workflows/
+
+  renovate:
+    # Renovate 設定の構文・スキーマ検証（renovate は Node 24 以上が必要）
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - run: npx --yes --package renovate -- renovate-config-validator --strict

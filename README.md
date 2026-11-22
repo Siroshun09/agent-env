@@ -93,4 +93,4 @@ ssh -t agent-box 'sudo systemctl stop agent-env-firstboot && sudo git -C /opt/ag
 ```
 
 ### Debian のバージョン
-ベースにする Debian ISO のバージョンは `envs/debian-pc/iso.conf` で固定しています。
+ベースにする Debian ISO のバージョンは `envs/debian-pc/iso.conf` で固定しています。新しいポイントリリースが出ると Renovate が更新の PR を作ります。この PR は自動ではマージされないので、ハッシュを [Debian の署名付き SHA256SUMS](https://www.debian.org/CD/verify) で確認してからマージしてください。
