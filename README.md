@@ -61,7 +61,7 @@ CI はビルドが通ることの検査だけを行う。ISO にはパスワー�
    - SSH 公開鍵（既定は `~/.ssh/id_ed25519.pub` → `id_ecdsa.pub` → `id_rsa.pub` の順に自動検出、`--ssh-key` で指定可）が人間用ユーザーに登録され、SSH のパスワードログインは無効になる。鍵が無ければ中断する（鍵なしで作るなら `--no-ssh-key`）。
    - 本番用の ISO は、GitHub の `main` と同じコミットをチェックアウトしているときだけ作れる（インストール後に反映できるのは `main` だけのため）。検証用に別ブランチや未 push のコミットから作るには `--allow-non-main` が必要で、`main` 以外から作った PC では `apply.sh` による反映はできない。
    - ISO には commit 済みの内容が入る（未コミットの変更があると中断する）。
-   - macOS ではビルド後に続けて USB メモリへの書き込みに進む（`write-usb.sh`）。外付けの物理ディスクだけを容量・接続方式・名前付きで一覧し、書き込み先のディスク名（例: `disk4`）を入力すると、消去・書き込み・読み戻し検証・取り出しまで行う（sudo のパスワードが必要）。書き込みだけやり直すときは `envs/debian-pc/write-usb.sh`、書き込まない場合は `--no-write`。
+   - macOS ではビルド後に続けて USB メモリへの書き込みに進む（`write-usb.sh`）。外付けの物理ディスクだけを容量・接続方式・名前付きで一覧し、書き込み先のディスク名（例: `disk4`）と確認の `ERASE disk4` を入力すると、書き込み直前に同じディスクであることを再確認したうえで消去・書き込み・読み戻し検証・取り出しまで行う（sudo のパスワードが必要）。書き込みだけやり直すときは `envs/debian-pc/write-usb.sh`、書き込まない場合は `--no-write`。
 2. USB メモリを PC に挿す。
 3. PC を USB から起動し、メニュー先頭の `agent-env: Automated install (ERASES DISK)` で Enter を押す。
    - 誤って再インストールしないよう、メニューは自動では進まない。
@@ -88,7 +88,7 @@ ssh agent-box
 #### 運用（更新と反映）
 | 対象 | 仕組み | タイミング |
 |---|---|---|
-| Debian のセキュリティ更新・安定版更新 | `unattended-upgrades` | 自動（毎日）。再起動が必要なら 04:30 に自動再起動 |
+| Debian のセキュリティ更新・安定版更新 | `unattended-upgrades` | 自動（毎日）。再起動が必要なら 04:30 に自動再起動（ログイン中のユーザーがいれば再起動しない） |
 | このリポジトリの変更（パッケージ・設定） | 管理者が `apply.sh` を実行して反映 | 手動のみ |
 
 `main` へのマージだけでは PC は変わらない。PC への反映は、管理者が内容を確認して承認する最終ステップとして分けている。
@@ -100,7 +100,8 @@ ssh -t agent-box sudo /opt/agent-env/envs/debian-pc/apply.sh
 3. 新しいコミットが無い場合も、承認すれば現在のコミットで bootstrap を再実行する。
 
 - 反映できるのは `main` だけ。未コミットの変更がある場合や、`main` の履歴が書き換えられて fast-forward できない場合は中断する。
-- 初回セットアップ（`agent-env-firstboot`）の実行中・再試行待ちの間は実行できない。
+- 初回セットアップ（`agent-env-firstboot`）が成功するまでは実行できない（`/var/lib/agent-env/firstboot.done` で判定）。
+- 同時に実行できるのは1つだけ。別の端末で実行中なら即座に中断する（承認していないコミットが実行されないように、表示から bootstrap 完了までを排他にしている）。
 - root 専用。`agent` には sudo が無いので反映できない。
 - 反映前後のコミット SHA、承認したユーザー、bootstrap の出力と結果を `/var/log/agent-env/apply.log` に記録する（`grep -E ' (START|OK|NG) ' /var/log/agent-env/apply.log` で履歴を確認できる）。
 
@@ -108,6 +109,11 @@ bootstrap が失敗した場合は失敗として終了し、自動では元に�
 
 `main` にはブランチ保護と必須チェックを設定しておく。
 
-自動再起動を止めたい場合は `envs/debian-pc/system/apt/52agent-env-unattended-upgrades` の `Automatic-Reboot` を `false` にする。
+初回セットアップの復旧: `agent-env-firstboot` は失敗すると 60 秒ごとに再試行し続ける（`journalctl -u agent-env-firstboot` で確認）。リポジトリ側の不具合が原因なら、修正を `main` にマージしてから次を実行する。
+```bash
+ssh -t agent-box 'sudo systemctl stop agent-env-firstboot && sudo git -C /opt/agent-env pull --ff-only origin main && sudo systemctl start agent-env-firstboot'
+```
+
+ログイン中は自動再起動しないので、`/run/reboot-required` があれば作業の区切りで `sudo reboot` する。自動再起動を完全に止めたい場合は `envs/debian-pc/system/apt/52agent-env-unattended-upgrades` の `Automatic-Reboot` を `false` にする。
 
 Debian ISO のバージョンは `envs/debian-pc/iso.conf` で固定している。

@@ -49,7 +49,7 @@ jobs:
 
   bootstrap:
     # Debian 13 コンテナで bootstrap を2回実行し、冪等に成功することを確認する。
-    # 続けて apply.sh（手動反映）が、非対話・不承認では何も変えず、承認したときだけ反映することを確認する。
+    # 続けて apply.sh（手動反映）が、非対話・初回セットアップ未完了・同時実行・不承認では何も変えず、承認したときだけ反映することを確認する。
     # （docker デーモンが必要なので ubuntu-slim は使えない）
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -78,6 +78,13 @@ jobs:
           export GIT_PAGER=cat
           # 非対話: 失敗し、何も変えない
           if "${apply}" < /dev/null; then exit 1; fi
+          test "$(git -C /opt/agent-env rev-parse HEAD)" = "${base}"
+          # 初回セットアップが完了していない: 失敗し、何も変えない
+          if printf 'yes\n' | script -qec "${apply}" /dev/null; then exit 1; fi
+          test "$(git -C /opt/agent-env rev-parse HEAD)" = "${base}"
+          mkdir -p /var/lib/agent-env && touch /var/lib/agent-env/firstboot.done
+          # 別の apply.sh が実行中（ロック取得中）: 失敗し、何も変えない
+          if printf 'yes\n' | flock /run/agent-env-apply.lock script -qec "${apply}" /dev/null; then exit 1; fi
           test "$(git -C /opt/agent-env rev-parse HEAD)" = "${base}"
           # 承認しない: 失敗し、何も変えない
           if printf 'no\n' | script -qec "${apply}" /dev/null > out.txt; then exit 1; fi

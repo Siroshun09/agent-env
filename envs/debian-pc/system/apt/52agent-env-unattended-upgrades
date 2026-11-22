@@ -8,7 +8,8 @@ Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
 Unattended-Upgrade::Remove-Unused-Dependencies "true";
 
 // カーネル等の更新で再起動が必要になったら、深夜に自動で再起動する。
-// 長時間のエージェント作業を止めたくない場合は "false" にして手動で再起動する。
+// ただし誰かがログインしている（SSH 接続中のエージェント作業など）ときは再起動しない。
+// その場合は再起動待ちのまま残るので、/run/reboot-required があれば作業の区切りで手動で再起動する。
 Unattended-Upgrade::Automatic-Reboot "true";
-Unattended-Upgrade::Automatic-Reboot-WithUsers "true";
+Unattended-Upgrade::Automatic-Reboot-WithUsers "false";
 Unattended-Upgrade::Automatic-Reboot-Time "04:30";

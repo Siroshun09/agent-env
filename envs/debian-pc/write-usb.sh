@@ -3,7 +3,8 @@
 # 使い方: envs/debian-pc/write-usb.sh [out/agent-env-debian-pc.iso]
 # 取り違え防止のため:
 #   - 候補は外付けの物理ディスク（diskutil の external, physical）だけ。内蔵ディスクは表示しない
-#   - 容量・名前・接続方式を表示し、書き込み先のディスク名（例: disk4）を入力させる
+#   - 容量・名前・接続方式を表示し、書き込み先のディスク名（例: disk4）を入力させ、さらに「ERASE disk4」と入力させる
+#   - 書き込み直前にディスクの情報を取り直し、一覧を表示したときと同じディスクであることを確認する
 #   - 書き込み後に読み戻して ISO と一致することを確認する
 # 書き込みには sudo（管理者パスワード）が必要。
 set -euo pipefail
@@ -21,6 +22,8 @@ iso_size="$(stat -f %z "${ISO}")"
 
 # diskutil info の値（plist から取り出す）
 info() { diskutil info -plist "$1" | plutil -extract "$2" raw -o - - 2>/dev/null || true; }
+# ディスクの識別情報（一覧表示時と書き込み直前で比較する）
+identity() { printf '%s|%s|%s|%s' "$(info "$1" Internal)" "$(info "$1" TotalSize)" "$(info "$1" BusProtocol)" "$(info "$1" MediaName)"; }
 external_disks() { diskutil list external physical | awk '/^\/dev\/disk[0-9]+/ { sub("/dev/", "", $1); print $1 }'; }
 
 while :; do
@@ -34,7 +37,9 @@ done
 
 echo
 echo "書き込み先の候補（外付けの物理ディスクのみ。書き込むとディスク全体が消去されます）:"
+ids=()
 for d in "${disks[@]}"; do
+  ids+=("$(identity "$d")")
   size="$(info "$d" TotalSize)"
   printf '  %-8s %6s GB  %-6s %s\n' "$d" "$(( ${size:-0} / 1000000000 ))" \
     "$(info "$d" BusProtocol)" "$(info "$d" MediaName)"
@@ -43,14 +48,23 @@ echo "ISO: ${ISO} ($(( iso_size / 1000000 )) MB)"
 echo
 read -r -p "書き込み先のディスク名を入力（例: ${disks[0]}。空欄で中止）: " target || target=""
 [[ -n "${target}" ]] || { echo "中止しました"; exit 1; }
-found=0
-for d in "${disks[@]}"; do [[ "$d" == "${target}" ]] && found=1; done
-[[ ${found} -eq 1 ]] || die "${target} は候補にありません"
+want_id=""
+for i in "${!disks[@]}"; do [[ "${disks[i]}" == "${target}" ]] && want_id="${ids[i]}"; done
+[[ -n "${want_id}" ]] || die "${target} は候補にありません"
 size="$(info "${target}" TotalSize)"
 (( ${size:-0} >= iso_size )) || die "${target} の容量が ISO より小さいです"
 
-echo "${target} を消去して書き込みます（sudo のパスワードを求められます）"
+echo
+echo "書き込み先: ${target}  $(( size / 1000000000 )) GB  $(info "${target}" BusProtocol)  $(info "${target}" MediaName)"
+read -r -p "このディスクの内容はすべて消去されます。よければ ERASE ${target} と入力: " answer || answer=""
+[[ "${answer}" == "ERASE ${target}" ]] || { echo "中止しました（何も書き込んでいません）"; exit 1; }
+
 diskutil unmountDisk "/dev/${target}"
+# 一覧を表示してから抜き差しされていないか（同じ名前が別のディスクを指していないか）を書き込み直前に確認する
+if ! external_disks | grep -x "${target}" > /dev/null || [[ "$(identity "${target}")" != "${want_id}" ]]; then
+  die "${target} の情報が一覧を表示したときと変わりました（抜き差しされた可能性）。もう一度実行してください"
+fi
+echo "書き込んでいます（sudo のパスワードを求められます）"
 # 書き込みは raw デバイス（rdisk）の方が速い。進捗は Ctrl-T で表示できる
 sudo dd if="${ISO}" of="/dev/r${target}" bs=4m
 sync
