@@ -7,7 +7,8 @@
 #   --ssh-key         人間用ユーザーに登録する公開鍵。パスワードでの SSH ログインは無効になる。
 #   --no-ssh-key      鍵を登録しない（SSH はパスワードでログインする）。どちらかの指定が必須。
 #   --user            人間用ユーザー（sudo あり）の名前。既定は owner。root や admin などの予約名は使えない。
-#   --allow-non-main  main 以外のブランチから作る（検証用）。インストール後の自動更新は main 以外では停止する。
+#   --allow-non-main  検証用。main 以外のブランチや、GitHub の main と一致しないコミットからも作れる。
+#                     main 以外から作った PC では、インストール後の自動更新は停止する。
 # 必要なもの: git, curl, xorriso, cpio, gzip, openssl（passwd -6 対応のもの。macOS 標準の LibreSSL は不可）
 #   macOS: brew install xorriso openssl（または build-iso-in-container.sh を使う）
 set -euo pipefail
@@ -69,6 +70,13 @@ BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 # インストール後の自動更新は main を追従する。main 以外から作ると自動更新が止まるので明示を求める
 [[ "${BRANCH}" == main || "${ALLOW_NON_MAIN}" -eq 1 ]] ||
   die "main 以外のブランチ（${BRANCH}）です。検証用に作る場合は --allow-non-main を付けてください"
+# 本番用は GitHub の main と同じコミットであること（未 push のコミットを入れない）
+if [[ "${ALLOW_NON_MAIN}" -eq 0 ]]; then
+  remote_main="$(git ls-remote "${REPO_URL}" refs/heads/main | cut -f1)"
+  [[ -n "${remote_main}" ]] || die "${REPO_URL} の main を取得できませんでした"
+  [[ "$(git rev-parse HEAD)" == "${remote_main}" ]] ||
+    die "HEAD が GitHub の main（${remote_main:0:7}）と一致しません。git pull するか、検証用なら --allow-non-main を付けてください"
+fi
 echo "${BRANCH} @ $(git rev-parse --short HEAD)"
 
 log "Debian ISO ${DEBIAN_ISO_VERSION}"

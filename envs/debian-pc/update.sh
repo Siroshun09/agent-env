@@ -31,11 +31,20 @@ now="$(git rev-parse HEAD)"
 echo "agent-env: ${BRANCH} ${prev:0:7} -> ${now:0:7}"
 
 # 更新後のスクリプトで実行する
+# bootstrap が失敗したら、リポジトリを更新前のコミットに戻し、旧 bootstrap を再適用する。
+# ただし OS の状態は完全には戻らない（新しい bootstrap が追加したパッケージやファイルは残る）。
 if ! "${BOOTSTRAP}"; then
-  if [[ "${now}" != "${prev}" ]]; then
-    echo "bootstrap が失敗したので ${prev:0:7} に戻します" >&2
-    git reset --quiet --hard "${prev}"
-    "${BOOTSTRAP}" || echo "戻したコミットでの bootstrap も失敗しました" >&2
+  if [[ "${now}" == "${prev}" ]]; then
+    echo "NG: bootstrap が失敗しました（リポジトリの更新なし: ${now:0:7}）" >&2
+    exit 1
+  fi
+  echo "NG: ${now:0:7} の bootstrap が失敗しました。リポジトリを ${prev:0:7} に戻します" >&2
+  git reset --quiet --hard "${prev}"
+  if "${BOOTSTRAP}"; then
+    echo "NG: リポジトリは ${prev:0:7} に戻り、旧 bootstrap の再適用は成功しました。" \
+      "${now:0:7} で追加されたパッケージやファイルは残っている可能性があります（git diff ${prev:0:7} ${now:0:7}）" >&2
+  else
+    echo "NG: リポジトリは ${prev:0:7} に戻りましたが、旧 bootstrap の再適用も失敗しました。手動での確認が必要です" >&2
   fi
   exit 1
 fi

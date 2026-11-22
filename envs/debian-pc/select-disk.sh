@@ -102,3 +102,6 @@ done
 
 logger -t agent-env "install target: ${disk_desc}"
 db_set partman-auto/disk "${disk}"
+# ブートローダーも同じディスクに入れる（default のままだと BIOS では別のディスクが選ばれ得る）
+db_set grub-installer/bootdev "${disk}"
+db_fset grub-installer/bootdev seen true
