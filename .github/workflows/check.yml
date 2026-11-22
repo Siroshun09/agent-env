@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+env:
+  ACTIONLINT_VERSION: 1.7.12
+  ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+  ZIZMOR_VERSION: 1.32.0
+
 jobs:
   shellcheck:
     # shellcheck はプリインストール済みなので軽量 runner で足りる
@@ -18,6 +23,44 @@ jobs:
         with:
           persist-credentials: false
       - run: shellcheck envs/*/*.sh
+
+  workflows:
+    # actionlint（構文・型、run: 内は shellcheck）と zizmor（セキュリティ）
+    runs-on: ubuntu-slim
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: actionlint
+        run: |
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
+          echo "${ACTIONLINT_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "${tarball}" actionlint
+          ./actionlint
+      - name: zizmor
+        run: pipx run "zizmor==${ZIZMOR_VERSION}" --offline --format=github .github/workflows/
+
+  config:
+    # preseed の書式と systemd ユニットの検証。どちらも警告は出すが失敗にしないので、出力があれば失敗とする
+    runs-on: ubuntu-slim
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: preseed
+        run: |
+          out="$(debconf-set-selections --checkonly envs/debian-pc/preseed.cfg 2>&1)"
+          if [ -n "${out}" ]; then echo "${out}"; exit 1; fi
+      - name: systemd units
+        run: |
+          # ExecStart のパス（/opt/agent-env）をチェックアウト先に置き換えて検証する
+          dir="$(mktemp -d)"
+          for f in envs/debian-pc/system/*.service envs/debian-pc/system/*.timer; do
+            sed "s|/opt/agent-env|${GITHUB_WORKSPACE}|g" "$f" > "${dir}/$(basename "$f")"
+          done
+          out="$(systemd-analyze verify "${dir}"/* 2>&1)"
+          if [ -n "${out}" ]; then echo "${out}"; exit 1; fi
 
   bootstrap:
     # Debian 13 コンテナで bootstrap を2回実行し、冪等に成功することを確認する
@@ -37,8 +80,14 @@ jobs:
           '
 
   build-iso:
-    # apt install と約 800 MB の ISO 処理があるので ubuntu-slim（1 CPU・15 分制限）は使わない
-    runs-on: ubuntu-24.04
+    # Linux と macOS（bash 3.2・BSD 系コマンド）の両方で build-iso.sh が動くことを確認する。
+    # apt/brew install と約 800 MB の ISO 処理があるので ubuntu-slim（1 CPU・15 分制限）は使わない。
+    # macOS runner は入れ子の仮想化ができず container / docker が動かないので、build-iso.sh を直接実行する。
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -48,26 +97,19 @@ jobs:
         with:
           path: ~/.cache/agent-env
           key: debian-iso-${{ hashFiles('envs/debian-pc/iso.conf') }}
-      - run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends xorriso cpio
+      - name: install tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends xorriso cpio
+      - name: install tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install xorriso
       - name: build
         run: |
           # PR では detached HEAD になるので、ブランチを作ってからビルドする
           # ログ（パスワードを含む）はリポジトリ外に置く。リポジトリ内だと未コミットの変更とみなされる
           git checkout -q -B ci-build
-          envs/debian-pc/build-iso.sh > "$RUNNER_TEMP/build.log"
-          grep -q "インストール中に聞かれるのはインストール先ディスクだけです" "$RUNNER_TEMP/build.log"
-      - name: verify ISO contents
-        run: |
-          xorriso -osirrox on -indev out/agent-env-debian-pc.iso \
-            -extract /boot/grub/grub.cfg grub.cfg \
-            -extract /isolinux/isolinux.cfg isolinux.cfg \
-            -extract /install.amd/initrd.gz initrd.gz \
-            -ls /agent-env 2>/dev/null | tee files.txt
-          for f in repo.bundle late-command.sh select-disk.sh build.env; do grep -q "'$f'" files.txt; done
-          grep -q 'agent-env: Automated install' grub.cfg
-          grep -q '^set timeout=-1' grub.cfg
-          grep -qx 'timeout 0' isolinux.cfg
-          zcat initrd.gz | grep -aq 'partman/early_command string sh /cdrom/agent-env/select-disk.sh'
+          envs/debian-pc/build-iso.sh > "${RUNNER_TEMP}/build.log"
+      - run: envs/debian-pc/verify-iso.sh
       - name: remove ISO (contains a password)
         if: always()
-        run: rm -rf out "$RUNNER_TEMP/build.log"
+        run: rm -rf out "${RUNNER_TEMP}/build.log"

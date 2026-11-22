@@ -25,6 +25,7 @@ envs/<name>/            OS・環境ごと
   debian-pc/            Debian 13 の実 PC
     build-iso.sh        無人インストール ISO を作る
     build-iso-in-container.sh  上記を使い捨てコンテナ内で実行する
+    verify-iso.sh       生成した ISO の中身を検査する
     preseed.cfg         インストーラの応答（テンプレート）
     select-disk.sh      インストール先ディスクの選択画面
     late-command.sh     インストール直後の処理（リポジトリ配置、初回起動の設定）
@@ -33,7 +34,7 @@ envs/<name>/            OS・環境ごと
     packages.txt        基本パッケージ
     system/             systemd ユニット、apt 設定
 out/                    生成物（.gitignore）
-.github/workflows/      CI（shellcheck、bootstrap の冪等性、ISO のビルド検査）
+.github/workflows/      CI（shellcheck、ワークフロー・設定ファイル検査、bootstrap の冪等性、Linux/macOS での ISO ビルド）
 ```
 
 CI はビルドが通ることの検査だけを行う。ISO はパスワードを含むため、成果物としては公開しない。
