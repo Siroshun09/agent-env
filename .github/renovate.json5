@@ -11,7 +11,7 @@
         '/^\\.github/workflows/.+\\.ya?ml$/',
       ],
       matchStrings: [
-        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+\\w+_VERSION: (?<currentValue>\\S+)(?:\\s+\\w+_SHA256: (?<currentDigest>[0-9a-f]{64}))?',
+        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+\\w+_VERSION: (?<currentValue>\\S+)',
       ],
     },
     {
@@ -40,11 +40,12 @@
   },
   packageRules: [
     {
-      description: 'SHA256SUMS には公開日時が無いので、待機期間を設けない',
+      description: 'SHA256SUMS には公開日時が無いので待機期間を設けない。SHA256SUMS の署名は検証していないので、自動マージせず人が確認する',
       matchDatasources: [
         'custom.debian-netinst',
       ],
       minimumReleaseAge: null,
+      automerge: false,
     },
   ],
 }
