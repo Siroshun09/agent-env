@@ -1,0 +1,18 @@
+# ローカル LLM のサーバー（llama.cpp の llama-server）。PC 内（127.0.0.1:8080）だけで待ち受ける。
+# OpenAI 互換の API（/v1）と、ブラウザ用のチャット画面を提供する。OpenCode からはモデル提供元 llama-cpp として使う。
+# モデルや引数は bootstrap.sh が /etc/agent-env/llama-server.env に書く（tools.conf から生成）。
+# 状況確認: journalctl -u agent-env-llama
+[Unit]
+Description=llama.cpp server (local LLM)
+After=network-online.target
+
+[Service]
+User=llama
+EnvironmentFile=/etc/agent-env/llama-server.env
+# --fit（既定で有効）が、VRAM に収まるように MoE のエキスパートの置き場所などを自動で調整する
+ExecStart=/opt/llama.cpp/current/llama-server --model ${LLAMA_MODEL} --alias ${LLAMA_MODEL_ALIAS} --host 127.0.0.1 --port 8080 --ctx-size 65536
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -11,6 +11,7 @@
 | ユーザーの分離（人間用の `owner` / エージェント用の `agent`） | エージェントが作業中のリポジトリ |
 | パッケージと podman、OS の更新設定 | |
 | エージェントのツール（Claude Code、OpenCode、mise、gh）と、その管理者用の設定 | |
+| NVIDIA ドライバーとローカル LLM（llama.cpp とモデル） | |
 
 `agent` には sudo 権限がありません。エージェントのツールに apt パッケージが必要な場合は、`envs/debian-pc/packages.txt` に追加してください。言語ツールは各プロジェクトの `mise.toml` で管理します。
 
@@ -33,7 +34,7 @@ envs/debian-pc/                Debian 13 の実 PC
   bootstrap.sh                 PC をセットアップする（冪等）
   apply.sh                     main の変更を、確認・承認したうえで PC に反映する
   packages.txt                 インストールするパッケージ
-  tools.conf                   apt で入らないツール（OpenCode）のバージョンとハッシュ
+  tools.conf                   apt で入らないツール（OpenCode、llama.cpp）とローカル LLM のモデルのバージョンとハッシュ
   system/                      systemd ユニット、apt の設定とリポジトリ、エージェントのツールの管理者用の設定
 .github/workflows/             CI（静的検査、ISO のビルド、bootstrap と apply.sh のテスト）
 ```
@@ -67,7 +68,7 @@ ssh -t agent-box sudo -iu agent
 
 `agent` ユーザーで次を実行します。
 - Claude Code: `cd ~/work && claude` を起動してログインします。表示された URL を Mac のブラウザで開いて認証します。続けて表示される `~/work` を信頼するかの確認で、信頼を選びます（Remote Control は、信頼済みのフォルダーでしか動きません）。
-- OpenCode: `opencode` を起動し（ブラウザの Web UI からでも可）、`/connect` で OpenAI を選んで ChatGPT のプランでサインインします。管理者用の設定で、OpenAI 以外のモデル提供元は使えないようにしています。
+- OpenCode: `opencode` を起動し（ブラウザの Web UI からでも可）、`/connect` で OpenAI を選んで ChatGPT のプランでサインインします。管理者用の設定で、OpenAI とローカル LLM 以外のモデル提供元は使えないようにしています。
 - GitHub: [fine-grained personal access token](https://github.com/settings/personal-access-tokens) を発行し、`gh auth login --with-token` に標準入力で渡してから `gh auth setup-git` を実行します。トークンは対象のリポジトリに限定し、権限は Contents と Pull requests の Read and write だけにして、有効期限を付けてください。`main` へのマージはブランチ保護で防ぎます。
 
 エージェントのツールの管理者用の設定（`envs/debian-pc/system/claude-code/`、`envs/debian-pc/system/opencode/`）は、bootstrap が `/etc/claude-code/` と `/etc/opencode/` に配置します。`agent` ユーザーの設定では上書きできません。
@@ -80,6 +81,8 @@ Host agent-box
   User owner
   # OpenCode の Web UI（PC 内の 127.0.0.1:4096）を Mac の localhost:4096 に転送する
   LocalForward 4096 127.0.0.1:4096
+  # ローカル LLM のチャット画面（llama-server。NVIDIA の GPU がある場合だけ）
+  LocalForward 8080 127.0.0.1:8080
 ```
 再インストールすると SSH のホスト鍵が変わります。`ssh-keygen -R agent-box.local` で古い鍵を削除し、初回接続時に表示される fingerprint が、PC のログイン画面に表示される `SSH host key:` と一致することを確認してください。
 
@@ -94,6 +97,15 @@ PC が起動すると、2 つのエージェントがサービスとして起動
 どちらのセッションも `agent` ユーザーの `~/work` で始まります。リポジトリの clone や worktree の作成はエージェントに任せます。
 
 Claude Code の Remote Control は、Claude にログインすると自動で起動します（`agent-env-claude-remote.path`）。サービスの状態は `journalctl -u agent-env-claude-remote` と `journalctl -u agent-env-opencode` で確認できます。bootstrap は動作中のサービスを再起動しないので、ユニットの変更は PC の再起動か `sudo systemctl restart <ユニット名>` で反映してください。
+
+## ローカル LLM
+NVIDIA の GPU がある PC では、llama.cpp の `llama-server` がサービス（`agent-env-llama.service`、`llama` ユーザー）として動きます。PC 内（127.0.0.1:8080）だけで待ち受け、OpenAI 互換の API（`/v1`）とチャット画面を提供します。
+
+- モデルは `tools.conf` で固定しています（現在は Qwen3.6 35B-A3B の 4bit 量子化、約 22GB）。MoE のモデルで、VRAM（8GB）に収まらないエキスパートは `--fit` が自動でメインメモリ側に置きます。初回の bootstrap でダウンロードするので、完了まで時間がかかります。
+- OpenCode からは、モデル `llama-cpp/qwen3.6-35b-a3b` として使えます（管理者用の設定で登録済み）。スクリプトなどからは `http://127.0.0.1:8080/v1` を直接呼べます。
+- Mac からは、`ssh -N agent-box` を実行したまま http://localhost:8080 を開くとチャット画面を使えます。
+- モデルを変えるときは、`tools.conf` の `LLAMA_MODEL_*` と、`envs/debian-pc/system/opencode/opencode.jsonc` のモデル名を書き換えます。
+- llama.cpp は毎日リリースされるので、Renovate の更新 PR は週 1 回です。リリースにチェックサムが無いため、更新 PR では `tools.conf` の `LLAMA_CPP_SHA256` を手で書き換えてください（書き換えるまで CI が失敗します）。
 
 ## 更新
 ### Debian とツールの更新（自動）

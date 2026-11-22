@@ -28,13 +28,15 @@
       versioningTemplate: 'semver-coerced',
     },
     {
-      description: 'bootstrap.sh が npm レジストリから取得するツール（直前の "# renovate:" コメントで対象を指定し、*_INTEGRITY も一緒に更新）',
+      description: 'bootstrap.sh がダウンロードするツール（直前の "# renovate:" コメントで対象を指定。*_INTEGRITY があれば一緒に更新）',
       customType: 'regex',
       managerFilePatterns: [
         '/^envs/debian-pc/tools\\.conf$/',
       ],
       matchStrings: [
         '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\w+_VERSION=(?<currentValue>\\S+)\\n\\w+_INTEGRITY=(?<currentDigest>sha512-[A-Za-z0-9+/=]+)',
+        // llama.cpp はリリースにチェックサムが無いので、バージョンだけを更新する（SHA256 は PR で手で更新する）
+        '# renovate: datasource=(?<datasource>github-releases) depName=(?<depName>\\S+)\\n\\w+_VERSION=(?<currentValue>\\S+)\\n',
       ],
       versioningTemplate: 'semver',
     },
@@ -58,6 +60,17 @@
     },
   },
   packageRules: [
+    {
+      description: 'llama.cpp は毎日リリースされるので週 1 回にまとめる。SHA256 を手で更新する必要があるので自動マージしない',
+      matchPackageNames: [
+        'ggml-org/llama.cpp',
+      ],
+      versioning: 'regex:^b(?<major>\\d+)$',
+      schedule: [
+        '* * * * 1',
+      ],
+      automerge: false,
+    },
     {
       description: 'SHA256SUMS には公開日時が無いので待機期間を設けない。SHA256SUMS の署名は検証していないので、自動マージせず人が確認する',
       matchDatasources: [
