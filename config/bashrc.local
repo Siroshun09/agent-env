@@ -1,0 +1,6 @@
+# bootstrap.sh が配置する。手で編集せずリポジトリ側を直すこと。
+eval "$(mise activate bash)"
+export DISABLE_AUTOUPDATER=1
+# 秘密情報（ANTHROPIC_API_KEY, GH_TOKEN など）は ~/.secrets/env に置く
+[ -f "$HOME/.secrets/env" ] && set -a && . "$HOME/.secrets/env" && set +a
+cd "$HOME/work" 2>/dev/null || true

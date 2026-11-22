@@ -1,0 +1,17 @@
+# apt で入れるもの。言語ランタイムは mise.toml 側で管理する。
+ca-certificates
+curl
+gnupg
+git
+openssh-client
+build-essential
+jq
+ripgrep
+fd-find
+unzip
+less
+procps
+tmux
+python3
+python3-venv
+podman
