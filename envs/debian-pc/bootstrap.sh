@@ -69,6 +69,19 @@ install -m 0755 "${ENV_DIR}/system/github/git-credential-agent-env.sh" /usr/loca
 install -m 0755 "${ENV_DIR}/system/github/gh.sh" /usr/local/bin/gh
 git config --system --replace-all credential.https://github.com.helper agent-env
 git config --system credential.https://github.com.useHttpPath true
+# 以前の方式（gh auth login と gh auth setup-git）の認証情報を消す。残っていると、git のユーザー設定が
+# 上の helper を無効にしたり、gh が古いトークンを使ったりする。ファイルの操作は agent ユーザーとして行う
+agent_git() { runuser -u "${AGENT_USER}" -- env HOME="/home/${AGENT_USER}" git config --global "$@"; }
+for section in credential.https://github.com credential.https://gist.github.com; do
+  if agent_git --get-regexp "^${section//./\\.}\\." > /dev/null 2>&1; then
+    agent_git --remove-section "${section}"
+    log "  ${AGENT_USER} の git の設定から ${section} を削除しました"
+  fi
+done
+if [ -e "/home/${AGENT_USER}/.config/gh/hosts.yml" ]; then
+  runuser -u "${AGENT_USER}" -- rm -f "/home/${AGENT_USER}/.config/gh/hosts.yml"
+  log "  ${AGENT_USER} の gh の認証情報（~/.config/gh/hosts.yml）を削除しました"
+fi
 
 log "NVIDIA ドライバー（NVIDIA の GPU がある場合だけ）"
 # DKMS でビルドするオープン版のカーネルモジュールと、計算用（CUDA）のライブラリだけを入れる（画面表示用は入れない）。

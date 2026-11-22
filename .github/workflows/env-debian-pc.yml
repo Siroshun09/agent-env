@@ -72,7 +72,7 @@ jobs:
           # エージェントのツール
           claude --version && opencode --version && mise --version && gh --version
           test -f /etc/claude-code/managed-settings.json && test -f /etc/opencode/opencode.jsonc
-          # GitHub のトークンの使い分け: git は URL の持ち主、gh は origin の持ち主のトークンを使う
+          # GitHub のトークンの使い分け: git は URL の持ち主、gh は操作対象のリポジトリの持ち主のトークンを使う
           test "$(command -v gh)" = /usr/local/bin/gh
           su - agent -c '
             set -eu
@@ -82,14 +82,33 @@ jobs:
             cred() { printf "protocol=https\nhost=github.com\npath=%s\n\n" "$1" | GIT_TERMINAL_PROMPT=0 git credential fill | sed -n "s/^password=//p"; }
             test "$(cred alice/repo.git)" = tok-alice
             test "$(cred My-Org/repo.git)" = tok-org
-            test -z "$(cred unknown/repo.git)"
+            # トークンの無い持ち主では、後続の helper（以前の gh auth setup-git など）を使わない
+            git config --global credential.https://github.com.helper "!f() { echo password=stale; }; f"
+            if printf "protocol=https\nhost=github.com\npath=unknown/repo.git\n\n" | GIT_TERMINAL_PROMPT=0 git credential fill; then exit 1; fi
+            test "$(cred alice/repo.git)" = tok-alice
+            git config --global --unset credential.https://github.com.helper
             r="$(mktemp -d)" && cd "${r}" && git init -q
             git remote add origin https://github.com/my-org/repo.git
             test "$(gh auth token)" = tok-org
             git remote set-url origin git@github.com:Alice/repo.git
             test "$(gh auth token)" = tok-alice
-            # 持ち主がわからず、トークンが複数ある場合は使わない
+            # gh repo set-default の設定を優先する
+            git remote add upstream https://github.com/my-org/repo.git
+            test "$(gh auth token)" = tok-org
+            git config remote.origin.gh-resolved base
+            test "$(gh auth token)" = tok-alice
+            # 持ち主がわからず、トークンが複数ある場合は、gh に保存済みの認証情報も使わない
+            mkdir -p ~/.config/gh && printf "github.com:\n    oauth_token: stale\n    user: x\n" > ~/.config/gh/hosts.yml
             cd / && if gh auth token; then exit 1; fi
+            if gh auth login --with-token < /dev/null; then exit 1; fi
+          '
+          # 以前の方式の認証情報は、bootstrap が削除する
+          su - agent -c 'git config --global credential.https://github.com.helper "" && git config --global --add credential.https://github.com.helper "!/usr/bin/gh auth git-credential"'
+          /src/envs/debian-pc/bootstrap.sh > /tmp/bootstrap-3.log 2>&1 || { cat /tmp/bootstrap-3.log; exit 1; }
+          su - agent -c '
+            set -eu
+            test ! -e ~/.config/gh/hosts.yml
+            test -z "$(git config --global --get-regexp "^credential\." || true)"
           '
           # 管理者用の設定は agent ユーザーの設定（ユーザー単位・プロジェクト単位）より優先される
           su - agent -c "claude update" 2>&1 | grep -q "disabled by your administrator"

@@ -56,7 +56,7 @@ case "$1" in
   list)
     [ $# -eq 1 ] || usage
     [ -d "${dir}" ] || exit 0
-    ls -1 "${dir}"
+    find "${dir}" -mindepth 1 -maxdepth 1 -type f ! -name '*.tmp' -printf '%f\n' | sort
     ;;
   remove)
     [ $# -eq 2 ] || usage
