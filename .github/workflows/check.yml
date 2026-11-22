@@ -1,0 +1,64 @@
+# 検査専用。ISO はパスワードを含むため、成果物としてアップロードしない。
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck envs/*/*.sh
+
+  bootstrap:
+    # Debian 13 コンテナで bootstrap を2回実行し、冪等に成功することを確認する
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          docker run --rm -v "$PWD:/opt/agent-env:ro" debian:trixie bash -euo pipefail -c '
+            /opt/agent-env/envs/debian-pc/bootstrap.sh
+            /opt/agent-env/envs/debian-pc/bootstrap.sh
+            id agent
+            grep "^agent:" /etc/subuid /etc/subgid
+            test -f /etc/apt/apt.conf.d/52agent-env-unattended-upgrades
+          '
+
+  build-iso:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # ISO に同梱する git bundle に履歴が必要
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/agent-env
+          key: debian-iso-${{ hashFiles('envs/debian-pc/iso.conf') }}
+      - run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends xorriso cpio
+      - name: build
+        run: |
+          # PR では detached HEAD になるので、ブランチを作ってからビルドする
+          git checkout -q -B ci-build
+          envs/debian-pc/build-iso.sh > build.log
+          grep -q "インストール中に聞かれるのはインストール先ディスクだけです" build.log
+      - name: verify ISO contents
+        run: |
+          xorriso -osirrox on -indev out/agent-env-debian-pc.iso \
+            -extract /boot/grub/grub.cfg grub.cfg \
+            -extract /isolinux/isolinux.cfg isolinux.cfg \
+            -extract /install.amd/initrd.gz initrd.gz \
+            -ls /agent-env 2>/dev/null | tee files.txt
+          for f in repo.bundle late-command.sh select-disk.sh build.env; do grep -q "'$f'" files.txt; done
+          grep -q 'agent-env: Automated install' grub.cfg
+          grep -q '^set timeout=-1' grub.cfg
+          grep -qx 'timeout 0' isolinux.cfg
+          zcat initrd.gz | grep -aq 'partman/early_command string sh /cdrom/agent-env/select-disk.sh'
+      - name: remove ISO (contains a password)
+        if: always()
+        run: rm -rf out build.log

@@ -24,6 +24,7 @@
 envs/<name>/            OS・環境ごと
   debian-pc/            Debian 13 の実 PC
     build-iso.sh        無人インストール ISO を作る
+    build-iso-in-container.sh  上記を使い捨てコンテナ内で実行する
     preseed.cfg         インストーラの応答（テンプレート）
     select-disk.sh      インストール先ディスクの選択画面
     late-command.sh     インストール直後の処理（リポジトリ配置、初回起動の設定）
@@ -32,7 +33,10 @@ envs/<name>/            OS・環境ごと
     packages.txt        基本パッケージ
     system/             systemd ユニット、apt 設定
 out/                    生成物（.gitignore）
+.github/workflows/      CI（shellcheck、bootstrap の冪等性、ISO のビルド検査）
 ```
+
+CI はビルドが通ることの検査だけを行う。ISO はパスワードを含むため、成果物としては公開しない。
 
 新しい OS・環境は `envs/<name>/` を追加する。
 
@@ -41,10 +45,13 @@ out/                    生成物（.gitignore）
 ### debian-pc
 手作業は「ISO 作成 → USB 書き込み → 起動して Enter → インストール先ディスクの選択」だけ。
 
-1. Linux か macOS で ISO を作る（`git`, `curl`, `xorriso`, `cpio`, `gzip` が必要。macOS は `brew install xorriso`）。
+1. ISO を作る。使い捨てのコンテナ内でビルドするので、ホストにツールを入れる必要はない。
    ```bash
-   envs/debian-pc/build-iso.sh --ssh-key ~/.ssh/id_ed25519.pub
+   envs/debian-pc/build-iso-in-container.sh --ssh-key ~/.ssh/id_ed25519.pub
    ```
+   - コンテナランタイムは Apple の `container`（macOS 26+、事前に `container system start`）、`docker`、`podman` の順に自動で選ぶ。
+   - コンテナを使わない場合は `envs/debian-pc/build-iso.sh` を直接実行する（`git`, `curl`, `xorriso`, `cpio`, `gzip` が必要）。
+   - Debian ISO のダウンロードは `out/cache/` にキャッシュされる。
    - 人間用ユーザー（sudo あり、既定名 `owner`）のパスワードはランダムに生成され、表示と `out/agent-env-debian-pc.password` への保存が行われる。パスワードマネージャ等に保存したら、ISO とパスワードファイルは削除する。
    - `--user` で人間用ユーザーの名前を変えられる（`admin` は Debian の予約名で使えない）。
    - `--ssh-key` を指定すると人間用ユーザーに鍵が登録され、SSH のパスワードログインは無効になる。

@@ -47,7 +47,8 @@ TTY=()
 
 # - ISO のダウンロードキャッシュは out/cache（.gitignore 済み）に置き、次回以降も使い回す
 # - GIT_OPTIONAL_LOCKS=0: git status がホストの .git/index を書き換えないようにする
-# shellcheck disable=SC2086
+# SC2016: コンテナ内で展開させるため単一引用符で渡す
+# shellcheck disable=SC2086,SC2016
 exec "${RUNTIME}" run --rm ${TTY[@]+"${TTY[@]}"} \
   -v "${REPO_ROOT}:/work" \
   -e XDG_CACHE_HOME=/work/out/cache \

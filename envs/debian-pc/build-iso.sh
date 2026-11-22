@@ -37,7 +37,7 @@ for cmd in git curl xorriso cpio gzip; do
   command -v "${cmd}" >/dev/null || die "${cmd} が必要です"
 done
 
-# shellcheck source=iso.conf
+# shellcheck source=/dev/null
 . "${ENV_DIR}/iso.conf"
 
 log "リポジトリの状態確認"

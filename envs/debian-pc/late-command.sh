@@ -6,6 +6,7 @@ set -eu
 
 SRC=/cdrom/agent-env
 # HUMAN_USER, REPO_URL, REPO_BRANCH
+# shellcheck source=/dev/null
 . "${SRC}/build.env"
 
 # リポジトリ（ビルド時のコミット）を配置する

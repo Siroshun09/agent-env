@@ -3,6 +3,7 @@
 # インストール先ディスクを一覧から選ばせ、partman-auto/disk に設定する。
 # 取り違え防止のため、ディスクが1台でも必ず確認する。インストールメディア自身は候補から外す。
 set -eu
+# shellcheck source=/dev/null
 . /usr/share/debconf/confmodule
 
 # インストールメディア（/cdrom をマウントしているデバイス）のディスク名
@@ -20,7 +21,7 @@ for dev in $(list-devices disk); do
   [ "${name}" = "${media_disk}" ] && continue
   sectors="$(cat "/sys/class/block/${name}/size" 2>/dev/null || echo 0)"
   size_gb=$((sectors * 512 / 1000000000))
-  model="$(cat "/sys/class/block/${name}/device/model" 2>/dev/null | tr -s ' ,' ' ' || true)"
+  model="$( { tr -s ' ,' ' ' < "/sys/class/block/${name}/device/model"; } 2>/dev/null || true)"
   choices="${choices}${choices:+, }${dev}  ${size_gb} GB  ${model}"
 done
 [ -n "${choices}" ] || { logger -t agent-env "インストール先のディスクが見つかりません"; exit 1; }
