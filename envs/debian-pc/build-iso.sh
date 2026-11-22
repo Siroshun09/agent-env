@@ -2,9 +2,10 @@
 # 無人インストール用の Debian ISO を作る。root 不要。
 # 生成物にはパスワードハッシュが入るので、公開・共有しないこと（out/ は .gitignore 済み）。
 #
-# 使い方: envs/debian-pc/build-iso.sh [--disk /dev/nvme0n1] [--ssh-key ~/.ssh/id_ed25519.pub]
+# 使い方: envs/debian-pc/build-iso.sh [--user owner] [--disk /dev/nvme0n1] [--ssh-key ~/.ssh/id_ed25519.pub]
+#   --user     人間用ユーザー（sudo あり）の名前。既定は owner。admin など Debian の予約名は使えない。
 #   --disk     インストール先（全消去される）。ディスクが複数ある PC では必ず指定する。
-#   --ssh-key  admin ユーザーに登録する公開鍵。指定するとパスワードでの SSH ログインを無効化する。
+#   --ssh-key  人間用ユーザーに登録する公開鍵。指定するとパスワードでの SSH ログインを無効化する。
 #   ADMIN_PASSWORD_HASH 環境変数があれば、パスワード入力を省略してそのハッシュを使う。
 # 必要なもの: git, curl, xorriso, cpio, gzip, openssl
 set -euo pipefail
@@ -19,15 +20,19 @@ OUT_ISO="${OUT_DIR}/agent-env-debian-pc.iso"
 die() { echo "エラー: $*" >&2; exit 1; }
 log() { printf '\n==> %s\n' "$*"; }
 
+HUMAN_USER="owner"
 DISK=""
 SSH_KEY=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --user) HUMAN_USER="$2"; shift 2 ;;
     --disk) DISK="$2"; shift 2 ;;
     --ssh-key) SSH_KEY="$2"; shift 2 ;;
     *) die "不明な引数: $1" ;;
   esac
 done
+[[ "${HUMAN_USER}" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || die "--user は小文字英数字とハイフンで指定してください"
+[[ "${HUMAN_USER}" != agent ]] || die "--user に agent は使えません（エージェント用に予約）"
 [[ -z "${DISK}" || "${DISK}" == /dev/* ]] || die "--disk は /dev/... で指定してください"
 [[ -z "${SSH_KEY}" ]] || [[ -f "${SSH_KEY}" ]] || die "公開鍵が見つかりません: ${SSH_KEY}"
 [[ -z "${SSH_KEY}" ]] || ! grep -q "PRIVATE KEY" "${SSH_KEY}" || die "秘密鍵が指定されています。.pub を指定してください"
@@ -61,7 +66,7 @@ if ! { [[ -f "${BASE_ISO}" ]] && verify; }; then
   verify || { rm -f "${BASE_ISO}"; die "ISO の SHA256 が一致しません"; }
 fi
 
-log "admin のパスワード"
+log "${HUMAN_USER} のパスワード"
 if [[ -z "${ADMIN_PASSWORD_HASH:-}" ]]; then
   read -rsp "パスワード: " pw1; echo
   read -rsp "パスワード（確認）: " pw2; echo
@@ -78,6 +83,7 @@ mkdir -p "${WORK}/initrd" "${WORK}/extra"
 
 # preseed: プレースホルダを埋めて initrd に入れる（/preseed.cfg は自動で読まれる）
 sed -e "s|@ADMIN_PASSWORD_HASH@|${ADMIN_PASSWORD_HASH//|/\\|}|" \
+    -e "s|@HUMAN_USER@|${HUMAN_USER}|g" \
     -e "s|@REPO_URL@|${REPO_URL}|" \
     -e "s|@REPO_BRANCH@|${BRANCH}|" \
     "${ENV_DIR}/preseed.cfg" > "${WORK}/initrd/preseed.cfg"
@@ -133,5 +139,6 @@ xorriso -indev "${BASE_ISO}" -outdev "${OUT_ISO}" \
   -boot_image any replay 2>/dev/null
 
 log "完了: ${OUT_ISO}"
+echo "人間用ユーザー: ${HUMAN_USER}"
 echo "USB メモリに書き込み、起動メニューで Enter を押すとインストールが始まります。"
 [[ -n "${DISK}" ]] && echo "インストール先: ${DISK}（全消去）" || echo "インストール先: 自動選択（ディスクが複数ある PC では --disk を指定すること）"

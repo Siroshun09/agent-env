@@ -37,11 +37,12 @@ out/                    生成物（.gitignore）
 
 1. 任意の Linux マシンで ISO を作る（`git`, `curl`, `xorriso`, `cpio`, `openssl` が必要）。
    ```bash
-   envs/debian-pc/build-iso.sh --disk /dev/nvme0n1 --ssh-key ~/.ssh/id_ed25519.pub
+   envs/debian-pc/build-iso.sh --user owner --disk /dev/nvme0n1 --ssh-key ~/.ssh/id_ed25519.pub
    ```
-   - `admin` のパスワードを聞かれる。ハッシュだけが ISO に入る。
+   - `--user` は人間用ユーザー（sudo あり）の名前。既定は `owner`（`admin` は Debian の予約名で使えない）。
+   - そのユーザーのパスワードを聞かれる。ハッシュだけが ISO に入る。
    - `--disk` はインストール先（全消去）。ディスクが複数ある PC では必ず指定する。
-   - `--ssh-key` を指定すると admin に鍵が登録され、SSH のパスワードログインは無効になる。
+   - `--ssh-key` を指定すると人間用ユーザーに鍵が登録され、SSH のパスワードログインは無効になる。
    - ISO には commit 済みの内容が入る（未コミットの変更があると中断する）。
    - 生成物 `out/agent-env-debian-pc.iso` にはパスワードハッシュが入るので共有しない。
 2. ISO を USB メモリに書き込む（書き込み先を取り違えないよう、リムーバブルドライブだけを表示するツールを推奨）。
