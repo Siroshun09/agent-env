@@ -160,6 +160,9 @@ jobs:
             test ! -e ~/.config/gh/hosts.yml
             test -z "$(git config --global --get-regexp "^credential\." || true)"
           '
+          # エージェントへの指示（ローカル LLM の使い方）。OpenCode は instructions で同じファイルを読む
+          cmp /src/envs/debian-pc/system/agents/local-llm.md /etc/claude-code/CLAUDE.md
+          grep -q '"instructions": \["/etc/claude-code/CLAUDE.md"\]' /etc/opencode/opencode.jsonc
           # 管理者用の設定は agent ユーザーの設定（ユーザー単位・プロジェクト単位）より優先される
           su - agent -c "claude update" 2>&1 | grep -q "disabled by your administrator"
           su - agent -c '

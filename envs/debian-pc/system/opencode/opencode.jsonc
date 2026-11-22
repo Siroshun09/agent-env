@@ -4,6 +4,8 @@
   "$schema": "https://opencode.ai/config.json",
   // バージョンは agent-env で固定し、Renovate と apply.sh で更新する
   "update": "disable",
+  // エージェントへの指示（ローカル LLM の使い方）。Claude Code と同じファイルを読む
+  "instructions": ["/etc/claude-code/CLAUDE.md"],
   // ローカル LLM（llama.cpp の llama-server。bootstrap.sh が NVIDIA の GPU がある PC でだけ起動する）
   "providers": {
     "llama-cpp": {

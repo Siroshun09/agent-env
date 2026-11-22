@@ -59,6 +59,9 @@ log "エージェントのツールの管理者用設定"
 install -d -m 0755 /etc/claude-code /etc/opencode
 install -m 0644 "${ENV_DIR}/system/claude-code/managed-settings.json" /etc/claude-code/
 install -m 0644 "${ENV_DIR}/system/opencode/opencode.jsonc" /etc/opencode/
+# エージェントへの指示（ローカル LLM の使い方）。Claude Code は管理者用の CLAUDE.md として読み（ユーザーは除外できない）、
+# OpenCode は opencode.jsonc の instructions で読む
+install -m 0644 "${ENV_DIR}/system/agents/local-llm.md" /etc/claude-code/CLAUDE.md
 install -m 0644 "${ENV_DIR}/system/profile.d/agent-env-mise.sh" /etc/profile.d/
 
 log "GitHub のトークンの使い分け（持ち主ごとの fine-grained PAT）"
