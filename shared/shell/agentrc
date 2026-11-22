@@ -1,0 +1,11 @@
+# shared/setup-user.sh が配置する。手で編集せずリポジトリ側を直すこと。
+# 対話シェル用（bash / zsh 共通）。
+if [ -n "${ZSH_VERSION:-}" ]; then
+  eval "$(mise activate zsh)"
+elif [ -n "${BASH_VERSION:-}" ]; then
+  eval "$(mise activate bash)"
+fi
+export DISABLE_AUTOUPDATER=1
+# 秘密情報（ANTHROPIC_API_KEY, GH_TOKEN など）は ~/.secrets/env に置く
+[ -f "$HOME/.secrets/env" ] && set -a && . "$HOME/.secrets/env" && set +a
+cd "$HOME/work" 2>/dev/null || true
