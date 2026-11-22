@@ -3,20 +3,21 @@
 エージェント専用 PC を、いつでも作り直せる形でセットアップするためのリポジトリです。
 
 ## 対象範囲
-このリポジトリでは、root 権限が必要な PC 側の設定だけを扱います。エージェント自身の環境は、別のリポジトリで管理します。
+このリポジトリでは、PC の OS からエージェントのツールまでを扱います。エージェントの作業中のデータと秘密情報だけは、リポジトリの外（PC 内）に置きます。
 
-| このリポジトリ | 別リポジトリ（agent 側） |
+| このリポジトリ | リポジトリの外（PC 内だけ） |
 |---|---|
-| OS のインストールとパーティション | Claude Code などのエージェント本体 |
-| ユーザーの分離（人間用の `owner` / エージェント用の `agent`） | 言語ツール（mise など）とそのバージョン |
-| 基本パッケージと podman | シェル設定、秘密情報の読み込み |
-| OS の更新設定 | エージェントの作業データ |
+| OS のインストールとパーティション | 秘密情報（Claude のログイン、ChatGPT のサインイン、GitHub のトークン） |
+| ユーザーの分離（人間用の `owner` / エージェント用の `agent`） | エージェントが作業中のリポジトリ |
+| パッケージと podman、OS の更新設定 | |
+| エージェントのツール（Claude Code、OpenCode、mise、gh）と、その管理者用の設定 | |
 
-`agent` には sudo 権限がありません。エージェントのツールに apt パッケージが必要な場合は、`envs/debian-pc/packages.txt` に追加してください。
+`agent` には sudo 権限がありません。エージェントのツールに apt パッケージが必要な場合は、`envs/debian-pc/packages.txt` に追加してください。言語ツールは各プロジェクトの `mise.toml` で管理します。
 
 ## 方針
 - PC は使い捨てにし、状態はリポジトリと外部に置きます。作り直すときは ISO から再インストールするだけです。
 - 人間用ユーザーとエージェント用ユーザーを分け、エージェントには sudo 権限を与えません。
+- エージェントのツールの設定のうち、エージェント自身に変えられたくないもの（OpenCode で使えるモデル提供元など）は、root 所有の管理者用の設定に置きます。管理者用の設定は、ユーザーやプロジェクトの設定より優先されます。
 - 秘密情報はリポジトリに入れません。ISO にはパスワードのハッシュと SSH 公開鍵が入るため、CI でも ISO は公開しません。
 
 ## 構成
@@ -31,7 +32,8 @@ envs/debian-pc/                Debian 13 の実 PC
   bootstrap.sh                 PC をセットアップする（冪等）
   apply.sh                     main の変更を、確認・承認したうえで PC に反映する
   packages.txt                 インストールするパッケージ
-  system/                      systemd ユニットと apt の設定
+  tools.conf                   apt で入らないツール（OpenCode）のバージョンとハッシュ
+  system/                      systemd ユニット、apt の設定とリポジトリ、エージェントのツールの管理者用の設定
 .github/workflows/             CI（静的検査、ISO のビルド、bootstrap と apply.sh のテスト）
 ```
 
@@ -50,7 +52,21 @@ envs/debian-pc/                Debian 13 の実 PC
 2. PC を USB メモリから起動し、メニューの `agent-env: Automated install (ERASES DISK)` を選んで Enter を押します。誤って再インストールしないよう、メニューは自動では進みません。
 3. 一覧からインストール先のディスクを選び、確認画面で `Yes` を選びます（既定は `No`）。選んだディスクのデータはすべて消去されます。USB メモリ自体は一覧に表示されません。この後は自動で進みます。
 4. 初回起動時に bootstrap が自動で実行されます。失敗した場合は 60 秒ごとに再試行します。進み具合は `journalctl -fu agent-env-firstboot` で確認できます。
-5. `sudo -iu agent` でエージェント用ユーザーに切り替え、agent 側のリポジトリでセットアップします。
+5. エージェントの認証をします（初回のみ）。手順は「エージェントの準備」を参照してください。
+
+## エージェントの準備
+初回セットアップが終わると、Claude Code（`claude`）、OpenCode（`opencode`）、mise、gh が入っています。認証情報はリポジトリにも ISO にも入らないので、最初に一度だけ手で設定します。
+
+```bash
+ssh -t agent-box sudo -iu agent
+```
+
+`agent` ユーザーで次を実行します。
+- Claude Code: `claude` を起動してログインします。表示された URL を Mac のブラウザで開いて認証します。
+- OpenCode: `opencode` を起動し、`/connect` で OpenAI を選んで ChatGPT のプランでサインインします。管理者用の設定で、OpenAI 以外のモデル提供元は使えないようにしています。
+- GitHub: [fine-grained personal access token](https://github.com/settings/personal-access-tokens) を発行し、`gh auth login --with-token` に標準入力で渡してから `gh auth setup-git` を実行します。トークンは対象のリポジトリに限定し、権限は Contents と Pull requests の Read and write だけにして、有効期限を付けてください。`main` へのマージはブランチ保護で防ぎます。
+
+エージェントのツールの管理者用の設定（`envs/debian-pc/system/claude-code/`、`envs/debian-pc/system/opencode/`）は、bootstrap が `/etc/claude-code/` と `/etc/opencode/` に配置します。`agent` ユーザーの設定では上書きできません。
 
 ## Mac からの接続
 PC は `agent-box.local` という名前で LAN 内に公開されます。`~/.ssh/config` に次を追加すると、`ssh agent-box` で接続できます。
@@ -62,8 +78,10 @@ Host agent-box
 再インストールすると SSH のホスト鍵が変わります。`ssh-keygen -R agent-box.local` で古い鍵を削除し、初回接続時に表示される fingerprint が、PC のログイン画面に表示される `SSH host key:` と一致することを確認してください。
 
 ## 更新
-### Debian の更新（自動）
+### Debian とツールの更新（自動）
 セキュリティ更新などは `unattended-upgrades` が毎日自動で適用します。再起動が必要な場合は 04:30 に自動で再起動しますが、ログイン中のユーザーがいるときは再起動しません。その場合は `/run/reboot-required` が残るので、作業の区切りで `sudo reboot` してください。
+
+Claude Code（公式 apt リポジトリの stable チャンネル）と mise の更新も、同じ仕組みで毎日自動で適用します。OpenCode のバージョンは `tools.conf` で固定していて、Renovate の更新 PR を `main` にマージしたあと、次の「このリポジトリの変更」の手順で反映します。
 
 ### このリポジトリの変更（手動）
 `main` にマージしただけでは PC は変わりません。PC に反映するには、管理者が次を実行します。

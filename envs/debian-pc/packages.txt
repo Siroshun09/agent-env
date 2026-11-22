@@ -1,6 +1,6 @@
-# apt で入れる基本パッケージ。
+# apt で入れるパッケージ。Debian 以外のリポジトリは system/apt/sources/ で追加する。
 # agent ユーザーには sudo が無いので、エージェントのツールが前提とする OS パッケージはここに追加する。
-# 言語ツールや Claude Code などユーザー単位で入れられるものは、agent 側の別リポジトリで管理する。
+# 言語ツールは各プロジェクトの mise.toml に任せる（mise 本体だけをここで入れる）。
 ca-certificates
 curl
 gnupg
@@ -15,6 +15,11 @@ less
 procps
 tmux
 python3
+openssl
+# エージェントのツール（claude-code と mise は公式の apt リポジトリから）
+claude-code
+mise
+gh
 # rootless podman（uidmap は Recommends なので --no-install-recommends では入らない）
 podman
 uidmap

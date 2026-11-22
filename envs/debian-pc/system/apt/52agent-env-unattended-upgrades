@@ -1,8 +1,14 @@
 // bootstrap.sh が /etc/apt/apt.conf.d/ に配置する。手で編集せずリポジトリ側を直すこと。
 // Debian のセキュリティ更新・安定版の更新を毎日自動で適用する（対象は Debian 既定の 50unattended-upgrades）。
+// 加えて、Claude Code（stable チャンネル）と mise の公式 apt リポジトリの更新も自動で適用する。
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::AutocleanInterval "7";
+
+Unattended-Upgrade::Origins-Pattern {
+  "origin=Anthropic,codename=stable";
+  "origin=mise repository,codename=stable";
+};
 
 Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
 Unattended-Upgrade::Remove-Unused-Dependencies "true";

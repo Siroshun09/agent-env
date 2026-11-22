@@ -1,0 +1,12 @@
+// bootstrap.sh が /etc/opencode/ に配置する。手で編集せずリポジトリ側を直すこと。
+// システムの設定はユーザー・プロジェクトの設定より優先されるので、agent ユーザーは上書きできない。
+{
+  "$schema": "https://opencode.ai/config.json",
+  // バージョンは agent-env で固定し、Renovate と apply.sh で更新する
+  "update": "disable",
+  // 使ってよいモデル提供元だけを許可する（ChatGPT プランでのサインインは openai）
+  "policies": [
+    { "action": "provider.use", "resource": "*", "effect": "deny" },
+    { "action": "provider.use", "resource": "openai", "effect": "allow" },
+  ],
+}

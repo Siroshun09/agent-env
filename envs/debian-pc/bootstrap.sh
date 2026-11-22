@@ -2,8 +2,8 @@
 # Debian 13 (trixie) の実 PC をエージェント専用ホストに仕立てる。冪等なので何度実行してもよい。
 # 初回起動時（agent-env-firstboot.service）と、管理者が手動で反映するとき（apply.sh）に実行される。
 #
-# 責務は PC 側（OS パッケージ・ユーザー・セキュリティ更新）まで。
-# agent ユーザーのホーム以下（Claude Code、言語ツール、シェル設定、秘密情報）は別リポジトリで管理する。
+# OS パッケージ・ユーザー・更新設定に加え、エージェントのツール（Claude Code、OpenCode、mise）と
+# その管理者用の設定まで扱う。agent ユーザーのホームに置くのは秘密情報と作業中のリポジトリだけで、ここでは扱わない。
 set -euo pipefail
 
 ENV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,8 +12,17 @@ AGENT_USER=agent
 log() { printf '\n==> %s\n' "$*"; }
 [[ $EUID -eq 0 ]] || { echo "root で実行してください" >&2; exit 1; }
 
-log "apt パッケージ"
+log "apt リポジトリ（Debian 以外）"
 export DEBIAN_FRONTEND=noninteractive
+# HTTPS のリポジトリを読むには ca-certificates が先に要る
+apt-get update -q
+apt-get install -y -q --no-install-recommends ca-certificates
+# 署名鍵はリポジトリに同梱する（取得時に fingerprint を確認済み。各 .sources のコメントを参照）
+install -d -m 0755 /etc/apt/keyrings
+install -m 0644 "${ENV_DIR}"/system/apt/keyrings/*.asc /etc/apt/keyrings/
+install -m 0644 "${ENV_DIR}"/system/apt/sources/*.sources /etc/apt/sources.list.d/
+
+log "apt パッケージ"
 apt-get update -q
 # コメント・空行を除いて packages.txt を読む
 mapfile -t PKGS < <(sed -e 's/#.*//' -e '/^\s*$/d' "${ENV_DIR}/packages.txt")
@@ -23,8 +32,32 @@ log "エージェント用ユーザー: ${AGENT_USER}"
 if ! id "${AGENT_USER}" >/dev/null 2>&1; then
   useradd --create-home --shell /bin/bash "${AGENT_USER}"
 fi
-# sudo は付与しない。root が必要なもの（apt パッケージ等）はこのリポジトリに書く。
+# sudo は付与しない。root が必要なもの（apt パッケージやツールの導入）はこのリポジトリに書く。
 # rootless podman 用の subuid/subgid は、uidmap が入っているので useradd が割り当てる。
+
+log "OpenCode"
+# shellcheck disable=SC1091 # 変数を定義するだけのファイル
+source "${ENV_DIR}/tools.conf"
+if [[ "$(/usr/local/bin/opencode --version 2>/dev/null || true)" != "opencode v${OPENCODE_VERSION}" ]]; then
+  tmp="$(mktemp -d)"
+  tarball="${tmp}/opencode.tgz"
+  curl -fsSL -o "${tarball}" "https://registry.npmjs.org/@opencode/cli-linux-x64/-/cli-linux-x64-${OPENCODE_VERSION}.tgz"
+  actual="sha512-$(openssl dgst -sha512 -binary "${tarball}" | base64 -w0)"
+  if [[ "${actual}" != "${OPENCODE_INTEGRITY}" ]]; then
+    echo "OpenCode の SHA-512 が一致しません: ${actual}" >&2
+    exit 1
+  fi
+  tar -xzf "${tarball}" -C "${tmp}" package/bin/opencode
+  install -m 0755 "${tmp}/package/bin/opencode" /usr/local/bin/opencode
+  rm -rf "${tmp}"
+fi
+
+log "エージェントのツールの管理者用設定"
+# ユーザー・プロジェクトの設定より優先される。root 所有なので agent ユーザーは変更できない
+install -d -m 0755 /etc/claude-code /etc/opencode
+install -m 0644 "${ENV_DIR}/system/claude-code/managed-settings.json" /etc/claude-code/
+install -m 0644 "${ENV_DIR}/system/opencode/opencode.jsonc" /etc/opencode/
+install -m 0644 "${ENV_DIR}/system/profile.d/agent-env-mise.sh" /etc/profile.d/
 
 log "Debian の自動セキュリティ更新"
 # OS のパッチは unattended-upgrades で自動適用する。このリポジトリの変更は自動では反映しない（apply.sh で手動）

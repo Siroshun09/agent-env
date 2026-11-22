@@ -49,6 +49,7 @@ jobs:
 
   bootstrap:
     # Debian 13 コンテナで bootstrap を2回実行し、冪等に成功することを確認する。
+    # エージェントのツールが入り、管理者用の設定を agent ユーザーが上書きできないことも確認する。
     # 続けて apply.sh（手動反映）が、非対話・初回セットアップ未完了・同時実行・main 以外・不承認では何も変えず、承認したときだけ反映することを確認する。
     # （docker デーモンが必要なので ubuntu-slim は使えない）
     runs-on: ubuntu-26.04
@@ -64,6 +65,21 @@ jobs:
           id agent
           grep "^agent:" /etc/subuid /etc/subgid
           test -f /etc/apt/apt.conf.d/52agent-env-unattended-upgrades
+
+          # エージェントのツール
+          claude --version && opencode --version && mise --version && gh --version
+          test -f /etc/claude-code/managed-settings.json && test -f /etc/opencode/opencode.jsonc
+          # 管理者用の設定は agent ユーザーの設定（ユーザー単位・プロジェクト単位）より優先される
+          su - agent -c "claude update" 2>&1 | grep -q "disabled by your administrator"
+          su - agent -c '
+            mkdir -p ~/.config/opencode
+            allow="{\"policies\": [{\"action\": \"provider.use\", \"resource\": \"*\", \"effect\": \"allow\"}]}"
+            echo "${allow}" > ~/.config/opencode/opencode.jsonc
+            mkdir -p ~/proj/.opencode && echo "${allow}" > ~/proj/opencode.json && echo "${allow}" > ~/proj/.opencode/opencode.jsonc
+            cd ~/proj && OPENAI_API_KEY=dummy ANTHROPIC_API_KEY=dummy OPENCODE_CONFIG=~/proj/opencode.json opencode models --standalone > /tmp/models.txt
+            rm -r ~/.config/opencode/opencode.jsonc ~/proj'
+          grep -q "^openai/" /tmp/models.txt
+          if grep -qv "^openai/" /tmp/models.txt; then cat /tmp/models.txt; exit 1; fi
 
           # apply.sh: GitHub の代わりにローカルの bare リポジトリを origin にする
           git config --global user.name ci && git config --global user.email ci@example.invalid
