@@ -12,6 +12,16 @@ in-target git -C /opt/agent-env checkout -q -B main
 in-target git -C /opt/agent-env remote set-url origin https://github.com/Siroshun09/agent-env.git
 rm -f /target/tmp/agent-env.bundle
 
+# Secure Boot が有効で NVIDIA GPU がある PC では、DKMS の署名鍵の MOK 登録をここで申請し、
+# インストール直後の再起動で表示される MokManager で承認できるようにする。
+# 失敗してもインストールは止めない（初回起動時の bootstrap が申請し直す）
+mkdir -p /target/var/lib/agent-env
+cp "${SRC}/mok-password" /target/var/lib/agent-env/mok-password
+chmod 600 /target/var/lib/agent-env/mok-password
+if ! in-target sh /opt/agent-env/envs/debian-pc/mok-enroll.sh; then
+  echo "MOK の登録申請に失敗しました。初回起動時に bootstrap が申請し直します" >&2
+fi
+
 # 初回起動時に bootstrap を実行する
 cp /target/opt/agent-env/envs/debian-pc/system/agent-env-firstboot.service /target/etc/systemd/system/
 in-target systemctl enable agent-env-firstboot.service

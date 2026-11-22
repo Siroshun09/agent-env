@@ -29,6 +29,7 @@ envs/debian-pc/                Debian 13 の実 PC
   preseed.cfg                  インストーラへの応答
   select-disk.sh               インストール先ディスクの選択画面
   late-command.sh              インストールの最後に、リポジトリと SSH を設定する
+  mok-enroll.sh                Secure Boot 用に、NVIDIA ドライバーの署名鍵の登録（MOK）を申請する
   bootstrap.sh                 PC をセットアップする（冪等）
   apply.sh                     main の変更を、確認・承認したうえで PC に反映する
   packages.txt                 インストールするパッケージ
@@ -44,15 +45,18 @@ envs/debian-pc/                Debian 13 の実 PC
    ```
    ISO の作成から USB メモリへの書き込みまでを行います。
    - ビルドはコンテナ内で行うため、Mac にツールを入れる必要はありません。Apple の `container`、`docker`、`podman` のいずれかが必要です（`container` の場合は、先に `container system start` を実行してください）。
-   - 人間用ユーザー `owner` のパスワードはランダムに生成され、画面と `out/agent-env-debian-pc.password` に出力されます。パスワードマネージャーに保存したら、このファイルは削除してください。
+   - 人間用ユーザー `owner` のパスワードはランダムに生成され、画面と `out/agent-env-debian-pc.password` に出力されます。パスワードマネージャーに保存したら、このファイルは削除してください。2 行目の MOK のパスワードは、インストール直後の再起動で 1 回だけ使います（手順 4）。
    - SSH 公開鍵（`~/.ssh/id_ed25519.pub` などを自動で探します。`--ssh-key` で指定も可能）が `owner` に登録されます。SSH のパスワードログインは無効です。
    - 書き込み先の候補には外付けディスクだけが表示されます。ディスク名（例: `disk4`）を入力し、確認のため `ERASE disk4` と入力すると書き込みが始まります。書き込み後は内容を検証し、USB メモリを取り出します。
    - ISO には現在のコミットが入ります。未コミットの変更がある場合や、現在のコミットが GitHub の `main` と異なる場合は中断します（`main` 以外から作った PC では、あとで `apply.sh` を使えなくなるため）。検証用に別のコミットから作る場合だけ `--allow-non-main` を付けます。
    - 書き込みだけをやり直す場合は `envs/debian-pc/write-usb.sh` を実行します。書き込みを省く場合は `--no-write` を付けます。
 2. PC を USB メモリから起動し、メニューの `agent-env: Automated install (ERASES DISK)` を選んで Enter を押します。誤って再インストールしないよう、メニューは自動では進みません。
 3. 一覧からインストール先のディスクを選び、確認画面で `Yes` を選びます（既定は `No`）。選んだディスクのデータはすべて消去されます。USB メモリ自体は一覧に表示されません。この後は自動で進みます。
-4. 初回起動時に bootstrap が自動で実行されます。失敗した場合は 60 秒ごとに再試行します。進み具合は `journalctl -fu agent-env-firstboot` で確認できます。
-5. エージェントの認証をします（初回のみ）。手順は「エージェントの準備」を参照してください。
+4. インストールが終わると再起動します。NVIDIA の GPU があり Secure Boot が有効な PC では、起動前に `Press any key to perform MOK management` と表示されるので、10 秒以内にキーを押します。青い MokManager の画面で `Enroll MOK` → `Continue` → `Yes` を選び、ISO の作成時に表示された MOK のパスワード（数字 8 桁。`out/agent-env-debian-pc.password` の 2 行目）を入力して `Reboot` を選びます。これは NVIDIA ドライバーの署名鍵を登録する手順で、Secure Boot の仕様上、PC の前での操作が必要です。
+   - 10 秒以内にキーを押さなかった場合は、そのまま通常の起動に進みます。見逃した場合や、インストール中の申請に失敗した場合は、初回起動時の bootstrap が申請し直すので、次の再起動で同じ操作をしてください（`journalctl -u agent-env-firstboot` に案内が出ます）。
+5. 初回起動時に bootstrap が自動で実行されます。失敗した場合は 60 秒ごとに再試行します。進み具合は `journalctl -fu agent-env-firstboot` で確認できます。
+6. NVIDIA の GPU がある PC では、bootstrap の完了後に一度 `sudo reboot` します（ドライバーを読み込むため）。`nvidia-smi` で GPU が表示されれば完了です。
+7. エージェントの認証をします（初回のみ）。手順は「エージェントの準備」を参照してください。
 
 ## エージェントの準備
 初回セットアップが終わると、Claude Code（`claude`）、OpenCode（`opencode`）、mise、gh が入っています。認証情報はリポジトリにも ISO にも入らないので、最初に一度だけ手で設定します。
@@ -95,7 +99,7 @@ Claude Code の Remote Control は、Claude にログインすると自動で起
 ### Debian とツールの更新（自動）
 セキュリティ更新などは `unattended-upgrades` が毎日自動で適用します。再起動が必要な場合は 04:30 に自動で再起動しますが、ログイン中のユーザーがいるときは再起動しません。その場合は `/run/reboot-required` が残るので、作業の区切りで `sudo reboot` してください。
 
-Claude Code（公式 apt リポジトリの stable チャンネル）と mise の更新も、同じ仕組みで毎日自動で適用します。OpenCode のバージョンは `tools.conf` で固定していて、Renovate の更新 PR を `main` にマージしたあと、次の「このリポジトリの変更」の手順で反映します。
+Claude Code（公式 apt リポジトリの stable チャンネル）と mise の更新も、同じ仕組みで毎日自動で適用します。NVIDIA ドライバーは自動更新の対象外で、ブランチを `bootstrap.sh` の `nvidia-driver-pinning-*` で固定しています。カーネルが更新されたときは DKMS が同じ鍵でモジュールを作り直すので、MOK の登録はやり直す必要がありません。OpenCode のバージョンは `tools.conf` で固定していて、Renovate の更新 PR を `main` にマージしたあと、次の「このリポジトリの変更」の手順で反映します。
 
 ### このリポジトリの変更（手動）
 `main` にマージしただけでは PC は変わりません。PC に反映するには、管理者が次を実行します。

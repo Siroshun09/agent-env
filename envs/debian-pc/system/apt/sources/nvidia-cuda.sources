@@ -1,0 +1,8 @@
+# NVIDIA 公式の CUDA リポジトリ（Debian 13 用）。Debian のドライバー（550 系）は RTX 50 系に対応していないため使う。
+# 鍵の fingerprint: 02182E60104FCDC26EAE1B8597A5D4CB8793F200
+#   （同じ URL の cuda-keyring_1.1-1_all.deb から取り出し、InRelease の署名がこの鍵で検証できることを確認）
+# unattended-upgrades の対象外。ドライバーのブランチは bootstrap.sh の nvidia-driver-pinning-* で固定する。
+Types: deb
+URIs: https://developer.download.nvidia.com/compute/cuda/repos/debian13/x86_64/
+Suites: /
+Signed-By: /etc/apt/keyrings/nvidia-cuda.asc

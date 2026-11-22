@@ -62,7 +62,7 @@ jobs:
           /src/envs/debian-pc/bootstrap.sh
           # agent が ~/work を root 所有のディレクトリへのシンボリックリンクにしても、2 回目の bootstrap がそれを変えないこと
           su - agent -c 'rm -r ~/work && ln -s /var/lib ~/work'
-          /src/envs/debian-pc/bootstrap.sh
+          /src/envs/debian-pc/bootstrap.sh | tee /tmp/bootstrap.log
           test "$(stat -c '%U %a' /var/lib)" = "root 755"
           su - agent -c 'rm ~/work && mkdir ~/work'
           id agent
@@ -83,6 +83,14 @@ jobs:
             rm -r ~/.config/opencode/opencode.jsonc ~/proj'
           grep -q "^openai/" /tmp/models.txt
           if grep -qv "^openai/" /tmp/models.txt; then cat /tmp/models.txt; exit 1; fi
+
+          # NVIDIA ドライバー: GPU が無い CI では入れないが、リポジトリと依存関係が解決できることを確認する
+          grep -q "NVIDIA の GPU が無いのでスキップします" /tmp/bootstrap.log
+          pkgs="$(sed -n 's/^NVIDIA_PKGS=(\(.*\))$/\1/p' /src/envs/debian-pc/bootstrap.sh)"
+          test -n "${pkgs}"
+          apt-get install -s -q --no-install-recommends ${pkgs} | grep -q "^Inst nvidia-kernel-open-dkms "
+          # MOK: GPU が無ければ何もしない
+          /src/envs/debian-pc/mok-enroll.sh | grep -q "NVIDIA GPU が無い"
 
           # Mac のブラウザから接続するためのサービス（systemd は動いていないので、ユニットの検証と OpenCode サーバーの単体起動）
           out="$(systemd-analyze verify /etc/systemd/system/agent-env-claude-remote.* /etc/systemd/system/agent-env-opencode.service 2>&1)"
@@ -184,7 +192,7 @@ jobs:
             -extract /isolinux/isolinux.cfg "${dir}/isolinux.cfg" \
             -extract /install.amd/initrd.gz "${dir}/initrd.gz" \
             -ls /agent-env 2>/dev/null > "${dir}/files.txt"
-          for f in repo.bundle authorized_keys late-command.sh select-disk.sh; do grep -q "'${f}'" "${dir}/files.txt"; done
+          for f in repo.bundle authorized_keys late-command.sh select-disk.sh mok-password; do grep -q "'${f}'" "${dir}/files.txt"; done
           grep -q '^menuentry "agent-env: Automated install' "${dir}/grub.cfg"
           grep -q '^set timeout=-1$' "${dir}/grub.cfg"
           grep -qx 'default agentenv' "${dir}/isolinux.cfg"
