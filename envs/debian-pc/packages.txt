@@ -14,4 +14,7 @@ procps
 tmux
 python3
 python3-venv
+# rootless podman（uidmap は Recommends なので --no-install-recommends では入らない）
 podman
+uidmap
+passt

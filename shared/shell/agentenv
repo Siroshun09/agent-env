@@ -1,0 +1,17 @@
+# shared/setup-user.sh が配置する。手で編集せずリポジトリ側を直すこと。
+# 環境変数（POSIX sh）。login シェル（~/.profile, ~/.zprofile）と対話シェル（~/.agentrc）の両方から読む。
+# 非対話の login シェル（sudo -iu agent cmd など）でもツールと秘密情報が使えるようにするため。
+for dir in "$HOME/.local/share/mise/shims" "$HOME/.local/bin"; do
+  case ":$PATH:" in
+    *":$dir:"*) ;;
+    *) PATH="$dir:$PATH" ;;
+  esac
+done
+export PATH
+export DISABLE_AUTOUPDATER=1
+# 秘密情報（ANTHROPIC_API_KEY, GH_TOKEN など）は ~/.secrets/env に KEY=value 形式で置く
+if [ -f "$HOME/.secrets/env" ]; then
+  set -a
+  . "$HOME/.secrets/env"
+  set +a
+fi

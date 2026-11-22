@@ -34,5 +34,15 @@ if ! id "${AGENT_USER}" >/dev/null 2>&1; then
 fi
 # sudo は付与しない。root が必要な変更はこのスクリプトに書く。
 
+# rootless podman 用の subuid/subgid。uidmap があれば useradd が割り当てるが、
+# uidmap より先にユーザーを作った場合などに備えて、無ければ既存範囲の後ろに追加する。
+for f in /etc/subuid /etc/subgid; do
+  touch "$f"
+  if ! grep -q "^${AGENT_USER}:" "$f"; then
+    start="$(awk -F: 'BEGIN { m = 100000 } { e = $2 + $3; if (e > m) m = e } END { print m }' "$f")"
+    echo "${AGENT_USER}:${start}:65536" >> "$f"
+  fi
+done
+
 # ここから先は OS 非依存（エージェント用ユーザー権限）
 runuser -l "${AGENT_USER}" -c "bash '${REPO_ROOT}/shared/setup-user.sh'"

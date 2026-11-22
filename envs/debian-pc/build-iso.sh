@@ -84,8 +84,6 @@ mkdir -p "${WORK}/initrd" "${WORK}/extra"
 # preseed: プレースホルダを埋めて initrd に入れる（/preseed.cfg は自動で読まれる）
 sed -e "s|@ADMIN_PASSWORD_HASH@|${ADMIN_PASSWORD_HASH//|/\\|}|" \
     -e "s|@HUMAN_USER@|${HUMAN_USER}|g" \
-    -e "s|@REPO_URL@|${REPO_URL}|" \
-    -e "s|@REPO_BRANCH@|${BRANCH}|" \
     "${ENV_DIR}/preseed.cfg" > "${WORK}/initrd/preseed.cfg"
 if [[ -n "${DISK}" ]]; then
   echo "d-i partman-auto/disk string ${DISK}" >> "${WORK}/initrd/preseed.cfg"
@@ -106,6 +104,7 @@ KERNEL_ARGS="auto=true priority=critical --- quiet"
 awk -v args="${KERNEL_ARGS}" '
   !done && /^menuentry/ {
     print "set default=0"
+    print "set timeout=-1"
     print "menuentry \"agent-env: Automated install (ERASES DISK)\" {"
     print "    linux /install.amd/vmlinuz " args
     print "    initrd /install.amd/initrd.gz"
@@ -126,7 +125,18 @@ label agentenv
   append vga=788 initrd=/install.amd/initrd.gz ${KERNEL_ARGS}
 EOF
 
+# 安全確認: どちらの起動メニューも自動では進まない（キー入力を待つ）こと
+[[ "$(grep -E '^\s*set timeout=' "${WORK}/grub.cfg.new" | tail -1)" == "set timeout=-1" ]] ||
+  die "grub.cfg が無期限待機になっていません"
+grep -qx 'timeout 0' "${WORK}/isolinux.cfg.new" || die "isolinux.cfg が無期限待機になっていません"
+
 git bundle create "${WORK}/extra/repo.bundle" "${BRANCH}" 2>/dev/null
+cp "${ENV_DIR}/late-command.sh" "${WORK}/extra/late-command.sh"
+cat > "${WORK}/extra/build.env" <<EOF
+HUMAN_USER='${HUMAN_USER}'
+REPO_URL='${REPO_URL}'
+REPO_BRANCH='${BRANCH}'
+EOF
 [[ -z "${SSH_KEY}" ]] || cp "${SSH_KEY}" "${WORK}/extra/authorized_keys"
 
 mkdir -p "${OUT_DIR}"

@@ -16,14 +16,11 @@ ensure_line() { # ensure_line <file> <line>
 log "シェル設定"
 install -d -m 0755 "${HOME}/.config/mise"
 install -m 0644 "${SHARED_DIR}/mise.toml" "${HOME}/.config/mise/config.toml"
+install -m 0644 "${SHARED_DIR}/shell/agentenv" "${HOME}/.agentenv"
 install -m 0644 "${SHARED_DIR}/shell/agentrc" "${HOME}/.agentrc"
-# 非対話シェル（エージェントからの実行）でもツールが見えるよう login 設定に入れる
-LOGIN_LINES=(
-  'export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"'
-  'export DISABLE_AUTOUPDATER=1'
-)
+# login シェル（非対話を含む）は ~/.agentenv、対話シェルは ~/.agentrc を読む
 for f in "${HOME}/.profile" "${HOME}/.zprofile"; do
-  for line in "${LOGIN_LINES[@]}"; do ensure_line "$f" "$line"; done
+  ensure_line "$f" '[ -f ~/.agentenv ] && . ~/.agentenv'
 done
 for f in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
   ensure_line "$f" '[ -f ~/.agentrc ] && . ~/.agentrc'
