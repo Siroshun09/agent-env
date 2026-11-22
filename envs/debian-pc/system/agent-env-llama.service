@@ -9,10 +9,13 @@ After=network-online.target
 [Service]
 User=llama
 EnvironmentFile=/etc/agent-env/llama-server.env
+# GPU を使えない（ドライバーが読み込まれていない、MOK が未承認など）ときは起動しない。
+# llama-server は CPU で動いてしまい、気付かないうちに非常に遅くなるため
+ExecStartPre=/usr/bin/nvidia-smi -L
 # --fit（既定で有効）が、VRAM に収まるように MoE のエキスパートの置き場所などを自動で調整する
 ExecStart=/opt/llama.cpp/current/llama-server --model ${LLAMA_MODEL} --alias ${LLAMA_MODEL_ALIAS} --host 127.0.0.1 --port 8080 --ctx-size 65536
 Restart=on-failure
-RestartSec=10
+RestartSec=60
 
 [Install]
 WantedBy=multi-user.target

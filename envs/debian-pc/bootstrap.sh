@@ -116,18 +116,32 @@ if has_nvidia_gpu; then
   # 配布バイナリが使う CUDA ランタイム（ドライバーと同じ NVIDIA のリポジトリから）
   apt-get install -y -q --no-install-recommends cuda-cudart-13-5 libcublas-13-5
   if ! id llama >/dev/null 2>&1; then
-    useradd --system --home-dir /var/lib/llama --shell /usr/sbin/nologin llama
+    useradd --system --no-create-home --home-dir /var/lib/llama --shell /usr/sbin/nologin llama
   fi
-  install -d -m 0755 -o llama -g llama /var/lib/llama /var/lib/llama/models
+  # モデルの置き場所は root 所有にする（llama ユーザーは読むだけ。llama-server が乗っ取られても、
+  # root が書き込む場所にシンボリックリンクを置けないように）
+  install -d -m 0755 -o root -g root /var/lib/llama /var/lib/llama/models
   model="/var/lib/llama/models/$(basename "${LLAMA_MODEL_URL}")"
   if [[ ! -f "${model}" ]]; then
-    # 数十 GB あるので、失敗して再試行したときは途中から再開する
-    curl -fL --retry 5 -C - -o "${model}.part" "${LLAMA_MODEL_URL}"
-    echo "${LLAMA_MODEL_SHA256}  ${model}.part" | sha256sum -c --quiet -
+    # 数十 GB あるので、失敗して再試行したときは途中から再開する。止まった接続は 2 分で切る
+    curl -fL --retry 5 --speed-limit 1024 --speed-time 120 -C - -o "${model}.part" "${LLAMA_MODEL_URL}" || {
+      rc=$?
+      # HTTP のエラー（途中のファイルが本来より大きいときの 416 など）は、途中のファイルを消してやり直す
+      if [[ ${rc} -eq 22 ]]; then rm -f "${model}.part"; fi
+      echo "モデルのダウンロードに失敗しました（curl: ${rc}）" >&2
+      exit 1
+    }
+    if ! echo "${LLAMA_MODEL_SHA256}  ${model}.part" | sha256sum -c --quiet -; then
+      # 壊れた途中のファイルから再開し続けないように消す
+      rm -f "${model}.part"
+      echo "モデルの SHA256 が一致しません" >&2
+      exit 1
+    fi
     chmod 0644 "${model}.part"
     mv "${model}.part" "${model}"
   fi
-  find /var/lib/llama/models -maxdepth 1 -name '*.gguf' ! -path "${model}" -delete
+  # 使わなくなったモデルと、途中のファイルを消す
+  find /var/lib/llama/models -maxdepth 1 \( -name '*.gguf' -o -name '*.gguf.part' \) ! -path "${model}" -delete
 
   env_new="$(printf 'LLAMA_MODEL=%s\nLLAMA_MODEL_ALIAS=%s\n' "${model}" "${LLAMA_MODEL_ALIAS}")"
   env_changed=false
@@ -141,7 +155,10 @@ if has_nvidia_gpu; then
   if [[ -d /run/systemd/system ]]; then
     systemctl daemon-reload
     # 作業中のセッションを持たないので、モデルや llama.cpp が変わったら再起動してよい
-    if [[ "${env_changed}" == true || "$(readlink /proc/"$(systemctl show -p MainPID --value agent-env-llama)"/exe 2>/dev/null || true)" != "${llama_dir}/llama-server" ]]; then
+    # ドライバーを入れた直後（再起動前）は GPU を使えないので起動しない（起動時に自動で起動する）
+    if ! nvidia-smi >/dev/null 2>&1; then
+      echo "GPU を使えないので、llama-server は再起動後に起動します"
+    elif [[ "${env_changed}" == true || "$(readlink /proc/"$(systemctl show -p MainPID --value agent-env-llama)"/exe 2>/dev/null || true)" != "${llama_dir}/llama-server" ]]; then
       systemctl restart --no-block agent-env-llama.service
     fi
   fi

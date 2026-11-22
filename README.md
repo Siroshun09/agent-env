@@ -105,7 +105,7 @@ NVIDIA の GPU がある PC では、llama.cpp の `llama-server` がサービ�
 - OpenCode からは、モデル `llama-cpp/qwen3.6-35b-a3b` として使えます（管理者用の設定で登録済み）。スクリプトなどからは `http://127.0.0.1:8080/v1` を直接呼べます。
 - Mac からは、`ssh -N agent-box` を実行したまま http://localhost:8080 を開くとチャット画面を使えます。
 - モデルを変えるときは、`tools.conf` の `LLAMA_MODEL_*` と、`envs/debian-pc/system/opencode/opencode.jsonc` のモデル名を書き換えます。
-- llama.cpp は毎日リリースされるので、Renovate の更新 PR は週 1 回です。リリースにチェックサムが無いため、更新 PR では `tools.conf` の `LLAMA_CPP_SHA256` を手で書き換えてください（書き換えるまで CI が失敗します）。
+- llama.cpp は毎日リリースされるので、Renovate の更新 PR は週 1 回です。バージョンと SHA256（GitHub がリリースの添付ファイルごとに公開している値）を一緒に更新します。
 
 ## 更新
 ### Debian とツールの更新（自動）
