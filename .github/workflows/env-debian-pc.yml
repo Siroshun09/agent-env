@@ -1,0 +1,167 @@
+# envs/debian-pc の検査。ISO はパスワードを含むため、成果物としてアップロードしない。
+# 環境を追加するときは、このファイルを複製して env-<name>.yml を作り、paths と中身を書き換える。
+name: env/debian-pc
+
+on:
+  pull_request:
+    paths:
+      - "envs/debian-pc/**"
+      - ".github/workflows/env-debian-pc.yml"
+  push:
+    branches: [main]
+    paths:
+      - "envs/debian-pc/**"
+      - ".github/workflows/env-debian-pc.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: envs/debian-pc
+
+jobs:
+  config:
+    # preseed の書式と systemd ユニットの検証。どちらも警告は出すが失敗にしないので、出力があれば失敗とする
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: preseed
+        run: |
+          out="$(debconf-set-selections --checkonly preseed.cfg 2>&1)"
+          if [ -n "${out}" ]; then echo "${out}"; exit 1; fi
+      - name: systemd units
+        run: |
+          # ExecStart のパス（/opt/agent-env）をチェックアウト先に置き換えて検証する
+          dir="$(mktemp -d)"
+          for f in system/*.service; do
+            sed "s|/opt/agent-env|${GITHUB_WORKSPACE}|g" "$f" > "${dir}/$(basename "$f")"
+          done
+          out="$(systemd-analyze verify "${dir}"/* 2>&1)"
+          if [ -n "${out}" ]; then echo "${out}"; exit 1; fi
+
+  bootstrap:
+    # Debian 13 コンテナで bootstrap を2回実行し、冪等に成功することを確認する。
+    # 続けて apply.sh（手動反映）が、非対話・初回セットアップ未完了・同時実行・main 以外・不承認では何も変えず、承認したときだけ反映することを確認する。
+    # （docker デーモンが必要なので ubuntu-slim は使えない）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: |
+          docker run --rm -v "${GITHUB_WORKSPACE}:/src:ro" debian:trixie bash -euo pipefail -c "$(cat <<'EOF'
+          /src/envs/debian-pc/bootstrap.sh
+          /src/envs/debian-pc/bootstrap.sh
+          id agent
+          grep "^agent:" /etc/subuid /etc/subgid
+          test -f /etc/apt/apt.conf.d/52agent-env-unattended-upgrades
+
+          # apply.sh: GitHub の代わりにローカルの bare リポジトリを origin にする
+          git config --global user.name ci && git config --global user.email ci@example.invalid
+          git config --global init.defaultBranch main
+          cp -r /src /work && rm -rf /work/.git && git -C /work init -q && git -C /work add -A && git -C /work commit -qm base
+          git init -q --bare /remote.git && git -C /work push -q /remote.git main
+          git clone -q /remote.git /opt/agent-env
+          git -C /work commit -q --allow-empty -m next && git -C /work push -q /remote.git main
+          apply=/opt/agent-env/envs/debian-pc/apply.sh
+          base="$(git -C /opt/agent-env rev-parse HEAD)"
+          next="$(git -C /work rev-parse HEAD)"
+          export GIT_PAGER=cat
+          # 非対話: 失敗し、何も変えない
+          if "${apply}" < /dev/null; then exit 1; fi
+          test "$(git -C /opt/agent-env rev-parse HEAD)" = "${base}"
+          # 初回セットアップが完了していない: 失敗し、何も変えない
+          if printf 'yes\n' | script -qec "${apply}" /dev/null; then exit 1; fi
+          test "$(git -C /opt/agent-env rev-parse HEAD)" = "${base}"
+          mkdir -p /var/lib/agent-env && touch /var/lib/agent-env/firstboot.done
+          # 別の apply.sh が実行中（ロック取得中）: 失敗し、何も変えない
+          if printf 'yes\n' | flock /run/agent-env-apply.lock script -qec "${apply}" /dev/null; then exit 1; fi
+          test "$(git -C /opt/agent-env rev-parse HEAD)" = "${base}"
+          # main 以外のブランチ: 失敗し、何も変えない
+          git -C /opt/agent-env switch -q -c other
+          if printf 'yes\n' | script -qec "${apply}" /dev/null; then exit 1; fi
+          test "$(git -C /opt/agent-env rev-parse HEAD)" = "${base}"
+          git -C /opt/agent-env switch -q main
+          # 承認しない: 失敗し、何も変えない
+          if printf 'no\n' | script -qec "${apply}" /dev/null > out.txt; then exit 1; fi
+          grep -q "${next}" out.txt
+          test "$(git -C /opt/agent-env rev-parse HEAD)" = "${base}"
+          test ! -e /var/log/agent-env/apply.log
+          # 承認する: 反映して bootstrap を実行し、ログに残す
+          printf 'yes\n' | script -qec "${apply}" /dev/null
+          test "$(git -C /opt/agent-env rev-parse HEAD)" = "${next}"
+          grep -q "START ${base} -> ${next}" /var/log/agent-env/apply.log
+          grep -q "OK ${next}" /var/log/agent-env/apply.log
+          # bootstrap が失敗するコミット: 失敗として終了し、失敗したコミットをログに残す
+          echo no-such-package-agent-env >> /work/envs/debian-pc/packages.txt
+          git -C /work commit -qam broken && git -C /work push -q /remote.git main
+          broken="$(git -C /work rev-parse HEAD)"
+          if printf 'yes\n' | script -qec "${apply}" /dev/null; then exit 1; fi
+          grep -q "NG ${broken}" /var/log/agent-env/apply.log
+          EOF
+          )"
+
+  build-iso:
+    # Linux と macOS（bash 3.2・BSD 系コマンド）の両方で build-iso.sh が動くことを確認する。
+    # apt/brew install と約 800 MB の ISO 処理があるので ubuntu-slim（1 CPU・15 分制限）は使わない。
+    # macOS runner は入れ子の仮想化ができず container / docker が動かないので、build-iso.sh を直接実行する。
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # ISO に同梱する git bundle に履歴が必要
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/agent-env
+          key: debian-iso-${{ hashFiles('envs/debian-pc/iso.conf') }}
+      - name: install tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends xorriso cpio
+      - name: install tools (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          # 標準の LibreSSL は openssl passwd -6 に対応していない
+          brew install xorriso openssl@3
+          echo "$(brew --prefix openssl@3)/bin" >> "${GITHUB_PATH}"
+      - name: build
+        run: |
+          # ログ（パスワードを含む）と鍵はリポジトリ外に置く。リポジトリ内だと未コミットの変更とみなされる
+          ssh-keygen -q -t ed25519 -N '' -f "${RUNNER_TEMP}/ci-key"
+          ./build-iso.sh --ssh-key "${RUNNER_TEMP}/ci-key.pub" --allow-non-main > "${RUNNER_TEMP}/build.log"
+      - name: check ISO contents
+        run: |
+          # 実機インストール前の回帰防止: 起動メニュー・preseed・同梱ファイルが期待どおり組み込まれているか
+          iso=../../out/agent-env-debian-pc.iso
+          dir="$(mktemp -d)"
+          xorriso -osirrox on -indev "${iso}" \
+            -extract /boot/grub/grub.cfg "${dir}/grub.cfg" \
+            -extract /isolinux/isolinux.cfg "${dir}/isolinux.cfg" \
+            -extract /install.amd/initrd.gz "${dir}/initrd.gz" \
+            -ls /agent-env 2>/dev/null > "${dir}/files.txt"
+          for f in repo.bundle authorized_keys late-command.sh select-disk.sh; do grep -q "'${f}'" "${dir}/files.txt"; done
+          grep -q '^menuentry "agent-env: Automated install' "${dir}/grub.cfg"
+          grep -q '^set timeout=-1$' "${dir}/grub.cfg"
+          grep -qx 'default agentenv' "${dir}/isolinux.cfg"
+          grep -qx 'timeout 0' "${dir}/isolinux.cfg"
+          gzip -dc "${dir}/initrd.gz" > "${dir}/initrd" 2>/dev/null || true
+          grep -aq 'partman/early_command string sh /cdrom/agent-env/select-disk.sh' "${dir}/initrd"
+          grep -aqE 'user-password-crypted password [$]6[$][./A-Za-z0-9]+[$][./A-Za-z0-9]{86}$' "${dir}/initrd"
+      - name: remove ISO (contains a password)
+        if: always()
+        working-directory: .
+        run: rm -rf out "${RUNNER_TEMP}/build.log" "${RUNNER_TEMP}"/ci-key*

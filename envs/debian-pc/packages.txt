@@ -1,0 +1,26 @@
+# apt で入れる基本パッケージ。
+# agent ユーザーには sudo が無いので、エージェントのツールが前提とする OS パッケージはここに追加する。
+# 言語ツールや Claude Code などユーザー単位で入れられるものは、agent 側の別リポジトリで管理する。
+ca-certificates
+curl
+gnupg
+git
+openssh-client
+build-essential
+jq
+ripgrep
+fd-find
+unzip
+less
+procps
+tmux
+python3
+# rootless podman（uidmap は Recommends なので --no-install-recommends では入らない）
+podman
+uidmap
+passt
+# Mac などからのリモート管理（ssh owner@agent-box.local）
+openssh-server
+avahi-daemon
+# Debian のセキュリティ更新の自動適用
+unattended-upgrades
