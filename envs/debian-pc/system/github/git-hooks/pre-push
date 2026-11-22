@@ -1,0 +1,49 @@
+#!/bin/sh
+# git の pre-push フック。/etc/gitconfig の core.hooksPath で、すべてのリポジトリに適用する。
+# リモートのデフォルトブランチへの force push（fast-forward でない更新）と、デフォルトブランチの削除を止める。
+# GitHub Free の private リポジトリではブランチ保護も ruleset も使えないため、PC 側で防ぐ。
+# 誤操作を防ぐためのもので、git push --no-verify などで迂回できる。
+# 最後に、リポジトリ自身の pre-push フック（.git/hooks/pre-push）があれば実行する。
+set -eu
+
+url="$2"
+input="$(cat)"
+
+is_zero() {
+  case "$1" in
+    *[!0]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+default=""
+while read -r _ local_sha remote_ref remote_sha; do
+  case "${remote_ref:-}" in
+    refs/heads/*) ;;
+    *) continue ;;
+  esac
+  # 新しいブランチの作成と fast-forward は問題ない
+  is_zero "${remote_sha}" && continue
+  if ! is_zero "${local_sha}" && git merge-base --is-ancestor "${remote_sha}" "${local_sha}" 2> /dev/null; then
+    continue
+  fi
+  # force push か削除。リモートのデフォルトブランチか調べる（このときだけ通信する）
+  if [ -z "${default}" ]; then
+    default="$(git ls-remote --symref "${url}" HEAD 2> /dev/null | sed -n 's|^ref: \(refs/heads/[^[:space:]]*\)[[:space:]]*HEAD$|\1|p')" || default=""
+    if [ -z "${default}" ]; then
+      echo "agent-env: ${remote_ref#refs/heads/} への force push（または削除）を止めました。リモートのデフォルトブランチを確認できないためです" >&2
+      exit 1
+    fi
+  fi
+  if [ "${remote_ref}" = "${default}" ]; then
+    echo "agent-env: デフォルトブランチ（${default#refs/heads/}）への force push と削除はできません" >&2
+    exit 1
+  fi
+done << END
+${input}
+END
+
+hook="$(git rev-parse --git-common-dir)/hooks/pre-push"
+if [ -x "${hook}" ]; then
+  printf '%s\n' "${input}" | "${hook}" "$@"
+fi

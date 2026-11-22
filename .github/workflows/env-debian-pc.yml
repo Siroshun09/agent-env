@@ -124,6 +124,34 @@ jobs:
             cd / && if gh auth token; then exit 1; fi
             if gh auth login --with-token < /dev/null; then exit 1; fi
           '
+          # デフォルトブランチへの force push と削除は、pre-push フックが止める（リモートはローカルの bare リポジトリで代用する）
+          su - agent -c '
+            set -eu
+            cd "$(mktemp -d)"
+            git init -q --bare -b main remote.git && git clone -q remote.git w 2> /dev/null && cd w
+            git config user.email a@example.com && git config user.name a
+            git commit -q --allow-empty -m 1 && git push -q origin main
+            git commit -q --allow-empty -m 2 && git push -q origin main
+            git switch -q -c feature && git push -q origin feature
+            git commit -q --amend --allow-empty -m 2b && git push -q -f origin feature
+            git switch -q main && git reset -q --hard HEAD~1
+            if git push -q -f origin main; then exit 1; fi
+            if git push -q --force-with-lease origin main; then exit 1; fi
+            if git push -q origin +HEAD:main; then exit 1; fi
+            if git push -q origin :main; then exit 1; fi
+            git push -q origin :feature
+            # デフォルトブランチが main 以外の場合
+            git -C ../remote.git symbolic-ref HEAD refs/heads/feature && git push -q origin HEAD:feature
+            git push -q -f origin main
+            if git push -q -f origin "$(git commit-tree -m x "$(git write-tree)")":refs/heads/feature; then exit 1; fi
+            # リポジトリ自身のフックも実行する
+            printf "#!/bin/sh\necho repo-pre-commit > /tmp/hook.log\n" > .git/hooks/pre-commit
+            printf "#!/bin/sh\ncat >> /tmp/hook.log\nexit 1\n" > .git/hooks/pre-push
+            chmod +x .git/hooks/pre-commit .git/hooks/pre-push
+            git commit -q --allow-empty -m 3 && test "$(cat /tmp/hook.log)" = repo-pre-commit
+            if git push -q origin main; then exit 1; fi
+            grep -q " refs/heads/main " /tmp/hook.log && rm /tmp/hook.log
+          '
           # 以前の方式の認証情報は、bootstrap が削除する
           su - agent -c 'git config --global credential.https://github.com.helper "" && git config --global --add credential.https://github.com.helper "!/usr/bin/gh auth git-credential"'
           /src/envs/debian-pc/bootstrap.sh > /tmp/bootstrap-3.log 2>&1 || { cat /tmp/bootstrap-3.log; exit 1; }

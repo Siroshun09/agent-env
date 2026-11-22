@@ -73,6 +73,19 @@ git config --system credential.https://github.com.useHttpPath true
 git config --system --unset-all url.https://github.com/.insteadOf || true
 git config --system --add url.https://github.com/.insteadOf git@github.com:
 git config --system --add url.https://github.com/.insteadOf ssh://git@github.com/
+# デフォルトブランチへの force push と削除を止める pre-push フックを、すべてのリポジトリに適用する。
+# ほかのフックは、リポジトリ自身のフック（.git/hooks）を実行する。push-to-checkout と proc-receive は、
+# フックがあるだけで git の動作が変わるので置かない
+hooks=/etc/agent-env/git-hooks
+rm -rf "${hooks}"
+install -d -m 0755 "${hooks}"
+install -m 0755 "${ENV_DIR}/system/github/git-hooks/pre-push" "${ENV_DIR}/system/github/git-hooks/run-repo-hook" "${hooks}/"
+for h in applypatch-msg pre-applypatch post-applypatch pre-commit pre-merge-commit prepare-commit-msg commit-msg \
+  post-commit pre-rebase post-checkout post-merge post-rewrite reference-transaction pre-auto-gc post-index-change \
+  sendemail-validate pre-receive update post-receive post-update; do
+  ln -s run-repo-hook "${hooks}/${h}"
+done
+git config --system core.hooksPath "${hooks}"
 # 以前の方式（gh auth login と gh auth setup-git）の認証情報を消す。残っていると、git のユーザー設定が
 # 上の helper を無効にしたり、gh が古いトークンを使ったりする。ファイルの操作は agent ユーザーとして行う
 agent_git() { runuser -u "${AGENT_USER}" -- env HOME="/home/${AGENT_USER}" git config --global "$@"; }
