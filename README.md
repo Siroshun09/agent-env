@@ -35,7 +35,7 @@ envs/debian-pc/                Debian 13 の実 PC
   apply.sh                     main の変更を、確認・承認したうえで PC に反映する
   packages.txt                 インストールするパッケージ
   tools.conf                   apt で入らないツール（OpenCode、llama.cpp）とローカル LLM のモデルのバージョンとハッシュ
-  system/                      systemd ユニット、apt の設定とリポジトリ、エージェントのツールの管理者用の設定、GitHub のトークンの使い分け
+  system/                      systemd ユニット、apt の設定とリポジトリ、エージェントのツールの管理者用の設定、GitHub のトークンの使い分けと git のフック
 .github/workflows/             CI（静的検査、ISO のビルド、bootstrap と apply.sh のテスト）
 ```
 
@@ -76,6 +76,9 @@ ssh -t agent-box sudo -iu agent
   - 持ち主のトークンが無い場合や、持ち主がわからない場合は、どのトークンも使いません（別の持ち主のトークンを誤って使わないため）。
   - SSH の URL（`git@github.com:...`、`ssh://git@github.com/...`）は、git が HTTPS に読み替えます。この PC には SSH の鍵を置かず、トークンで認証するためです。
   - `gh auth login` と `gh auth setup-git` は使えないようにしています。以前の方式で保存した gh の認証情報と git の設定は、bootstrap が削除します。
+  - デフォルトブランチへの force push（fast-forward でない更新）と削除は、git の pre-push フックが止めます。GitHub Free の private リポジトリではブランチ保護も ruleset も使えないためです。すべてのリポジトリに `/etc/gitconfig` の `core.hooksPath` で適用し、リポジトリ自身のフック（`.git/hooks`）も続けて実行します。
+    - 誤操作を防ぐためのもので、`git push --no-verify` や GitHub の API では迂回できます。確実に防ぐには、private リポジトリでもブランチ保護や ruleset を使える GitHub の有料プランが必要です。
+    - リポジトリの設定で `core.hooksPath` を変えている場合（husky など）は、このフックは動きません。
   - 保存済みのトークンの一覧は `agent-env-github-token list`、削除は `agent-env-github-token remove <持ち主>` です。トークンは `~/.config/agent-env/github-tokens/` に保存されます（`agent` ユーザーだけが読めます）。
 
 エージェントのツールの管理者用の設定（`envs/debian-pc/system/claude-code/`、`envs/debian-pc/system/opencode/`）は、bootstrap が `/etc/claude-code/` と `/etc/opencode/` に配置します。`agent` ユーザーの設定では上書きできません。

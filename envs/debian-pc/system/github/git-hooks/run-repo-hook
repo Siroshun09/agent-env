@@ -1,0 +1,9 @@
+#!/bin/sh
+# core.hooksPath を設定すると、git はリポジトリの .git/hooks を使わなくなる。
+# その代わりに、同じ名前のフックがリポジトリにあれば実行する（このファイルへのシンボリックリンクとして置く）
+# リポジトリの作成中（git init や git clone の途中）は、まだリポジトリとして読めないことがある
+dir="$(git rev-parse --git-common-dir 2> /dev/null)" || exit 0
+hook="${dir}/hooks/$(basename "$0")"
+if [ -x "${hook}" ]; then
+  exec "${hook}" "$@"
+fi
