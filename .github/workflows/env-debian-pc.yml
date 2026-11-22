@@ -170,10 +170,7 @@ jobs:
             cd ~/proj && OPENAI_API_KEY=dummy ANTHROPIC_API_KEY=dummy OPENCODE_CONFIG=~/proj/opencode.json opencode models --standalone > /tmp/models.txt
             rm -r ~/.config/opencode/opencode.jsonc ~/proj'
           grep -q "^openai/" /tmp/models.txt
-          # tools.conf のモデルがすべて OpenCode に登録されていること
-          names="$(bash -c 'source /src/envs/debian-pc/tools.conf; for m in "${LLAMA_MODELS[@]}"; do echo "${m%% *}"; done')"
-          test "$(echo "${names}" | wc -l)" -ge 2
-          for name in ${names}; do grep -qx "llama-cpp/${name}" /tmp/models.txt; done
+          grep -qx "llama-cpp/qwen3.6-35b-a3b" /tmp/models.txt
           if grep -qvE "^(openai|llama-cpp)/" /tmp/models.txt; then cat /tmp/models.txt; exit 1; fi
 
           # NVIDIA ドライバー: GPU が無い CI では入れないが、リポジトリと依存関係が解決できることを確認する
@@ -189,6 +186,11 @@ jobs:
           # サービスはルーターモード（モデルの切り替え）の引数を使う
           /opt/llama.cpp/current/llama-server --help | grep -q -- "--models-preset PATH"
           /opt/llama.cpp/current/llama-server --help | grep -q -- "--models-max N"
+          # llama-models.ini が参照するファイルと、tools.conf でダウンロードするファイルが一致すること
+          ini="$(sed -nE 's#^(model|mmproj) = /var/lib/llama/models/##p' /src/envs/debian-pc/system/llama-models.ini | sort)"
+          conf="$(bash -c 'source /src/envs/debian-pc/tools.conf; for f in "${LLAMA_FILES[@]}"; do echo "${f%% *}"; done' | sort)"
+          test -n "${ini}"
+          test "${ini}" = "${conf}"
           grep -q "モデルとサーバーは入れません" /tmp/bootstrap.log
           # GPU が無いので nvidia-smi も無い。GPU の確認（ExecStartPre）だけを差し替えて検証する
           sed 's|^ExecStartPre=/usr/bin/nvidia-smi .*|ExecStartPre=/usr/bin/true|' /src/envs/debian-pc/system/agent-env-llama.service > /tmp/agent-env-llama.service

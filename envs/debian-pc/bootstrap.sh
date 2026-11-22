@@ -160,40 +160,37 @@ if has_nvidia_gpu; then
   # モデルの置き場所は root 所有にする（llama ユーザーは読むだけ。llama-server が乗っ取られても、
   # root が書き込む場所にシンボリックリンクを置けないように）
   install -d -m 0755 -o root -g root /var/lib/llama /var/lib/llama/models
-  # llama-server（ルーターモード）が読むモデルの一覧。モデルごとの設定を書く（キーは llama-server の引数名）
-  preset="version = 1"$'\n'
   keep=()
-  for entry in "${LLAMA_MODELS[@]}"; do
+  for entry in "${LLAMA_FILES[@]}"; do
     read -r name url sha256 <<< "${entry}"
-    model="/var/lib/llama/models/$(basename "${url}")"
-    if [[ ! -f "${model}" ]]; then
+    file="/var/lib/llama/models/${name}"
+    if [[ ! -f "${file}" ]]; then
       # 数十 GB あるので、失敗して再試行したときは途中から再開する。止まった接続は 2 分で切る
-      curl -fL --retry 5 --speed-limit 1024 --speed-time 120 -C - -o "${model}.part" "${url}" || {
+      curl -fL --retry 5 --speed-limit 1024 --speed-time 120 -C - -o "${file}.part" "${url}" || {
         rc=$?
         # HTTP のエラー（途中のファイルが本来より大きいときの 416 など）は、途中のファイルを消してやり直す
-        if [[ ${rc} -eq 22 ]]; then rm -f "${model}.part"; fi
+        if [[ ${rc} -eq 22 ]]; then rm -f "${file}.part"; fi
         echo "モデル（${name}）のダウンロードに失敗しました（curl: ${rc}）" >&2
         exit 1
       }
-      if ! echo "${sha256}  ${model}.part" | sha256sum -c --quiet -; then
+      if ! echo "${sha256}  ${file}.part" | sha256sum -c --quiet -; then
         # 壊れた途中のファイルから再開し続けないように消す
-        rm -f "${model}.part"
+        rm -f "${file}.part"
         echo "モデル（${name}）の SHA256 が一致しません" >&2
         exit 1
       fi
-      chmod 0644 "${model}.part"
-      mv "${model}.part" "${model}"
+      chmod 0644 "${file}.part"
+      mv "${file}.part" "${file}"
     fi
-    keep+=(! -path "${model}")
-    preset+=$'\n'"[${name}]"$'\n'"model = ${model}"$'\n'"ctx-size = 65536"$'\n'
+    keep+=(! -path "${file}")
   done
   # 使わなくなったモデルと、途中のファイルを消す
   find /var/lib/llama/models -maxdepth 1 \( -name '*.gguf' -o -name '*.gguf.part' \) "${keep[@]}" -delete
 
+  # モデルの一覧（llama-server のルーターモードが読む）
   preset_changed=false
-  if [[ "$(cat /etc/agent-env/llama-models.ini 2>/dev/null || true)" != "${preset%$'\n'}" ]]; then
-    install -d -m 0755 /etc/agent-env
-    printf '%s' "${preset}" > /etc/agent-env/llama-models.ini
+  if ! cmp -s "${ENV_DIR}/system/llama-models.ini" /etc/agent-env/llama-models.ini; then
+    install -D -m 0644 "${ENV_DIR}/system/llama-models.ini" /etc/agent-env/llama-models.ini
     preset_changed=true
   fi
   # 以前の方式（モデル 1 つ）の設定を消す
