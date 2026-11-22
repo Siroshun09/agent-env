@@ -25,7 +25,8 @@ if ! grep -qs efivarfs /proc/mounts; then
 fi
 if ! mokutil --sb-state 2>&1 | grep -q 'SecureBoot enabled'; then echo "MOK: Secure Boot が無効なので何もしません"; exit 0; fi
 
-if [ ! -s "${KEY}" ]; then
+if [ ! -s "${KEY}" ] || [ ! -s "${CERT}" ]; then
+  # 片方だけ残っている場合（作成中に中断した場合など）も作り直す
   mkdir -p /var/lib/dkms
   (umask 077 && openssl req -new -x509 -nodes -days 36500 -newkey rsa:2048 \
     -subj "/CN=agent-box DKMS module signing key/" -keyout "${KEY}" -outform DER -out "${CERT}" 2>/dev/null)

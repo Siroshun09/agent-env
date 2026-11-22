@@ -72,7 +72,10 @@ has_nvidia_gpu() {
 }
 if has_nvidia_gpu; then
   # Secure Boot が有効なら、モジュールの署名鍵の MOK 登録を申請する（インストール中に申請済みなら何もしない）
-  "${ENV_DIR}/mok-enroll.sh"
+  # 失敗しても残りの設定は続ける（ドライバーは入り、署名鍵の登録が済めば読み込まれる）
+  if ! "${ENV_DIR}/mok-enroll.sh"; then
+    echo "警告: MOK の登録申請に失敗しました。次の bootstrap（apply.sh）で再試行します" >&2
+  fi
   apt-get install -y -q --no-install-recommends "${NVIDIA_PKGS[@]}"
   if ! nvidia-smi >/dev/null 2>&1; then
     # 初回は nouveau の無効化（initramfs）と、MOK の承認のために再起動が要る
