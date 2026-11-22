@@ -10,8 +10,10 @@
       "name": "llama.cpp（ローカル）",
       "package": "@opencode/ai/providers/openai-compatible",
       "settings": { "baseURL": "http://127.0.0.1:8080/v1" },
-      // モデル名は tools.conf の LLAMA_MODEL_ALIAS と合わせる
-      "models": { "qwen3.6-35b-a3b": { "name": "Qwen3.6 35B-A3B（ローカル）" } },
+      // モデル名は system/llama-models.ini のセクション名と合わせる（埋め込みのモデルはチャットに使えないので登録しない）
+      "models": {
+        "qwen3.6-35b-a3b": { "name": "Qwen3.6 35B-A3B（ローカル）", "capabilities": { "input": ["text", "image"] } },
+      },
     },
   },
   // 使ってよいモデル提供元だけを許可する（ChatGPT プランでのサインインは openai）
