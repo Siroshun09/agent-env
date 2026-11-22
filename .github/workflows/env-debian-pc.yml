@@ -89,15 +89,19 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends xorriso cpio
       - name: install tools (macOS)
         if: runner.os == 'macOS'
-        run: brew install xorriso
+        run: |
+          # 標準の LibreSSL は openssl passwd -6 に対応していない
+          brew install xorriso openssl@3
+          echo "$(brew --prefix openssl@3)/bin" >> "${GITHUB_PATH}"
       - name: build
         run: |
-          # PR では detached HEAD になるので、ブランチを作ってからビルドする
-          # ログ（パスワードを含む）はリポジトリ外に置く。リポジトリ内だと未コミットの変更とみなされる
-          git checkout -q -B ci-build
-          ./build-iso.sh > "${RUNNER_TEMP}/build.log"
+          # PR では detached HEAD になるので、本番と同じ main としてビルドする（ローカルのブランチのみ。push はしない）
+          # ログ（パスワードを含む）と鍵はリポジトリ外に置く。リポジトリ内だと未コミットの変更とみなされる
+          git checkout -q -B main
+          ssh-keygen -q -t ed25519 -N '' -f "${RUNNER_TEMP}/ci-key"
+          ./build-iso.sh --ssh-key "${RUNNER_TEMP}/ci-key.pub" > "${RUNNER_TEMP}/build.log"
       - run: ./verify-iso.sh
       - name: remove ISO (contains a password)
         if: always()
         working-directory: .
-        run: rm -rf out "${RUNNER_TEMP}/build.log"
+        run: rm -rf out "${RUNNER_TEMP}/build.log" "${RUNNER_TEMP}"/ci-key*

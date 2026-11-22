@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # build-iso.sh で作った ISO の中身を検査する（CI・手元の両方で使う）。Linux / macOS で動く。
 # 使い方: envs/debian-pc/verify-iso.sh [out/agent-env-debian-pc.iso]
+# ISO は鍵あり（--ssh-key）で作ったものを想定する。
 set -euo pipefail
 
 ENV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,7 +18,7 @@ xorriso -osirrox on -indev "${ISO}" \
   -extract /install.amd/initrd.gz "${WORK}/initrd.gz" \
   -ls /agent-env 2>/dev/null > "${WORK}/files.txt"
 
-for f in repo.bundle late-command.sh select-disk.sh build.env; do
+for f in repo.bundle late-command.sh select-disk.sh build.env authorized_keys; do
   grep -q "'${f}'" "${WORK}/files.txt" || fail "/agent-env/${f} がありません"
 done
 
