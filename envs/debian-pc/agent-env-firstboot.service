@@ -1,0 +1,20 @@
+# インストール直後の初回起動で bootstrap.sh を実行する。成功すると以後は起動しない。
+# 状況確認: journalctl -u agent-env-firstboot
+[Unit]
+Description=agent-env first boot setup
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=!/var/lib/agent-env/firstboot.done
+
+[Service]
+Type=oneshot
+StateDirectory=agent-env
+ExecStart=/opt/agent-env/envs/debian-pc/bootstrap.sh
+ExecStartPost=/usr/bin/touch /var/lib/agent-env/firstboot.done
+# ネットワーク不調などで失敗したら間隔を空けて再試行する
+Restart=on-failure
+RestartSec=60
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=multi-user.target
