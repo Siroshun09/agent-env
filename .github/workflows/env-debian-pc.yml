@@ -69,13 +69,15 @@ jobs:
           # エージェントのツール
           claude --version && opencode --version && mise --version && gh --version
           test -f /etc/claude-code/managed-settings.json && test -f /etc/opencode/opencode.jsonc
-          # 管理者用の設定は agent ユーザーの設定より優先される
+          # 管理者用の設定は agent ユーザーの設定（ユーザー単位・プロジェクト単位）より優先される
           su - agent -c "claude update" 2>&1 | grep -q "disabled by your administrator"
           su - agent -c '
             mkdir -p ~/.config/opencode
-            echo "{\"policies\": [{\"action\": \"provider.use\", \"resource\": \"*\", \"effect\": \"allow\"}]}" > ~/.config/opencode/opencode.jsonc
-            OPENAI_API_KEY=dummy ANTHROPIC_API_KEY=dummy opencode models --standalone > /tmp/models.txt
-            rm ~/.config/opencode/opencode.jsonc'
+            allow="{\"policies\": [{\"action\": \"provider.use\", \"resource\": \"*\", \"effect\": \"allow\"}]}"
+            echo "${allow}" > ~/.config/opencode/opencode.jsonc
+            mkdir -p ~/proj/.opencode && echo "${allow}" > ~/proj/opencode.json && echo "${allow}" > ~/proj/.opencode/opencode.jsonc
+            cd ~/proj && OPENAI_API_KEY=dummy ANTHROPIC_API_KEY=dummy OPENCODE_CONFIG=~/proj/opencode.json opencode models --standalone > /tmp/models.txt
+            rm -r ~/.config/opencode/opencode.jsonc ~/proj'
           grep -q "^openai/" /tmp/models.txt
           if grep -qv "^openai/" /tmp/models.txt; then cat /tmp/models.txt; exit 1; fi
 
