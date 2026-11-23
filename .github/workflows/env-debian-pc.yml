@@ -72,6 +72,8 @@ jobs:
           # エージェントのツール
           claude --version && opencode --version && mise --version && gh --version
           test -f /etc/claude-code/managed-settings.json && test -f /etc/opencode/opencode.jsonc
+          # mise のグローバルの言語ツール
+          su - agent -c 'java -version && go version && pnpm --version'
           # GitHub のトークンの使い分け: git は URL の持ち主、gh は操作対象のリポジトリの持ち主のトークンを使う
           test "$(command -v gh)" = /usr/local/bin/gh
           su - agent -c '

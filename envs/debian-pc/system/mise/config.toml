@@ -1,0 +1,7 @@
+# bootstrap.sh が /etc/mise/config.toml（mise のシステム全体の設定）に配置する。
+# どのディレクトリでも使える言語ツール。プロジェクトの mise.toml があればそちらが優先される。
+# バージョンは Renovate が更新する（Java は mise の既定どおり Temurin）
+[tools]
+java = "27.0.1.1+4"
+go = "1.27.4"
+pnpm = "12.21.0"
