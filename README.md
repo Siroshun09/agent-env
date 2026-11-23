@@ -13,7 +13,7 @@
 | エージェントのツール（Claude Code、OpenCode、mise、gh）と、その管理者用の設定 | |
 | NVIDIA ドライバーとローカル LLM（llama.cpp とモデル） | |
 
-`agent` には sudo 権限がありません。エージェントのツールに apt パッケージが必要な場合は、`envs/debian-pc/packages.txt` に追加してください。言語ツールは各プロジェクトの `mise.toml` で管理します。Java、Go、pnpm は最新版をグローバルに入れていて（`envs/debian-pc/system/mise/config.toml`）、`apply.sh` のたびに更新します。
+`agent` には sudo 権限がありません。エージェントのツールに apt パッケージが必要な場合は、`envs/debian-pc/packages.txt` に追加してください。言語ツールは各プロジェクトの `mise.toml` で管理します。Java、Go、pnpm はグローバルに入れていて、バージョンは `envs/debian-pc/system/mise/config.toml` で固定し、Renovate が更新します。
 
 ## 方針
 - PC は使い捨てにし、状態はリポジトリと外部に置きます。作り直すときは ISO から再インストールするだけです。

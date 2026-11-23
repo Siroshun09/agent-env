@@ -3,6 +3,12 @@
   extends: [
     'github>Siroshun09/renovate-config//github-actions/renovate.json5',
   ],
+  mise: {
+    // bootstrap.sh が /etc/mise/config.toml に置く、グローバルの言語ツール
+    managerFilePatterns: [
+      '/^envs/debian-pc/system/mise/config\\.toml$/',
+    ],
+  },
   customManagers: [
     {
       description: 'ワークフローの env で固定しているツール（直前の "# renovate:" コメントで対象を指定し、*_SHA256 があれば一緒に更新）',

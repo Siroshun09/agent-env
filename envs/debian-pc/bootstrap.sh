@@ -68,10 +68,9 @@ install -m 0644 "${ENV_DIR}/system/agents/local-llm.md" /etc/agent-env/local-llm
 install -m 0644 "${ENV_DIR}/system/profile.d/agent-env-mise.sh" /etc/profile.d/
 install -d -m 0755 /etc/mise
 install -m 0644 "${ENV_DIR}/system/mise/config.toml" /etc/mise/config.toml
-# グローバルの言語ツール（Java、Go、pnpm）を agent ユーザーとして入れ、最新に更新する。
+# グローバルの言語ツール（Java、Go、pnpm）を agent ユーザーとして入れる。
 # 失敗しても残りの設定は続ける（次の bootstrap で再試行する）
-if ! runuser -u "${AGENT_USER}" -- env -C "/home/${AGENT_USER}" HOME="/home/${AGENT_USER}" MISE_YES=1 \
-  bash -c 'mise install && mise upgrade'; then
+if ! runuser -u "${AGENT_USER}" -- env -C "/home/${AGENT_USER}" HOME="/home/${AGENT_USER}" MISE_YES=1 mise install; then
   echo "警告: mise のツールのインストールに失敗しました。次の bootstrap（apply.sh）で再試行します" >&2
 fi
 
