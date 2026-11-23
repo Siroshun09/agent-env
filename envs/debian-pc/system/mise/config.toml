@@ -1,0 +1,7 @@
+# bootstrap.sh が /etc/mise/config.toml（mise のシステム全体の設定）に配置する。
+# どのディレクトリでも使える言語ツール。プロジェクトの mise.toml があればそちらが優先される。
+# 常に最新を使い、bootstrap（apply.sh）のたびに mise upgrade で更新する
+[tools]
+java = "latest"
+go = "latest"
+pnpm = "latest"
