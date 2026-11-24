@@ -92,22 +92,25 @@ Host agent-box
   User owner
   # OpenCode の Web UI（PC 内の 127.0.0.1:4096）を Mac の localhost:4096 に転送する
   LocalForward 4096 127.0.0.1:4096
+  # ブラウザの端末（PC 内の 127.0.0.1:7681）を Mac の localhost:7681 に転送する
+  LocalForward 7681 127.0.0.1:7681
   # ローカル LLM のチャット画面（llama-server。NVIDIA の GPU がある場合だけ）
   LocalForward 8080 127.0.0.1:8080
 ```
 再インストールすると SSH のホスト鍵が変わります。`ssh-keygen -R agent-box.local` で古い鍵を削除し、初回接続時に表示される fingerprint が、PC のログイン画面に表示される `SSH host key:` と一致することを確認してください。
 
 ### ブラウザからエージェントを使う
-PC が起動すると、2 つのエージェントがサービスとして起動します。「エージェントの準備」が済んでいれば、PC にログインしなくてもブラウザから使えます。
+PC が起動すると、次のサービスが起動します。「エージェントの準備」が済んでいれば、PC にログインしなくてもブラウザから使えます。
 
 | | 使い方 | 仕組み |
 |---|---|---|
 | Claude Code | ブラウザで [claude.ai/code](https://claude.ai/code) を開き、`agent-box` を選びます。Claude アプリからも使えます | Remote Control（`agent-env-claude-remote.service`）。PC から Anthropic へ外向きに接続するので、PC 側でポートは開けません |
+| ブラウザの端末（Claude Code、Codex など） | `ssh -N agent-box` を実行したまま、ブラウザで http://localhost:7681 を開きます。ユーザー名は `agent`、パスワードは `ssh agent-box sudo cat /etc/agent-env/terminal.env` で確認します。`claude` や `codex` をそのまま起動できます | ttyd と tmux（`agent-env-terminal.service`）。ブラウザを閉じても作業は続き、開き直すと同じ画面に戻ります。PC 内（127.0.0.1）だけで待ち受け、SSH で転送します |
 | OpenCode | `ssh -N agent-box` を実行したまま、ブラウザで http://localhost:4096 を開きます。ユーザー名は `opencode`、パスワードは `ssh agent-box sudo cat /etc/agent-env/opencode-server.env` で確認します | `opencode serve`（`agent-env-opencode.service`）。PC 内（127.0.0.1）だけで待ち受け、SSH で転送します |
 
-どちらのセッションも `agent` ユーザーの `~/work` で始まります。リポジトリの clone や worktree の作成はエージェントに任せます。
+どのセッションも `agent` ユーザーの `~/work` で始まります。リポジトリの clone や worktree の作成はエージェントに任せます。
 
-Claude Code の Remote Control は、Claude にログインすると自動で起動します（`agent-env-claude-remote.path`）。サービスの状態は `journalctl -u agent-env-claude-remote` と `journalctl -u agent-env-opencode` で確認できます。bootstrap は動作中のサービスを再起動しないので、ユニットの変更は PC の再起動か `sudo systemctl restart <ユニット名>` で反映してください。
+Claude Code の Remote Control は、Claude にログインすると自動で起動します（`agent-env-claude-remote.path`）。サービスの状態は `journalctl -u agent-env-claude-remote`、`journalctl -u agent-env-opencode`、`journalctl -u agent-env-terminal` で確認できます。bootstrap は動作中のサービスを再起動しないので、ユニットの変更は PC の再起動か `sudo systemctl restart <ユニット名>` で反映してください。
 
 ## ローカル LLM
 NVIDIA の GPU がある PC では、llama.cpp の `llama-server` がサービス（`agent-env-llama.service`、`llama` ユーザー）として動きます。PC 内（127.0.0.1:8080）だけで待ち受け、OpenAI 互換の API（`/v1`）とチャット画面を提供します。

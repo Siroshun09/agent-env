@@ -211,8 +211,8 @@ jobs:
           # root 以外が書き換えられるファイルが無いこと（llama.cpp の配布物は 777 のディレクトリを含む）
           test -z "$(find /opt/llama.cpp /etc/agent-env /etc/opencode /etc/claude-code /etc/codex -perm -o+w ! -type l)"
 
-          # Mac のブラウザから接続するためのサービス（systemd は動いていないので、ユニットの検証と OpenCode サーバーの単体起動）
-          out="$(systemd-analyze verify /etc/systemd/system/agent-env-claude-remote.* /etc/systemd/system/agent-env-opencode.service 2>&1)"
+          # Mac のブラウザから接続するためのサービス（systemd は動いていないので、ユニットの検証と、OpenCode サーバーとブラウザの端末の単体起動）
+          out="$(systemd-analyze verify /etc/systemd/system/agent-env-claude-remote.* /etc/systemd/system/agent-env-opencode.service /etc/systemd/system/agent-env-terminal.service 2>&1)"
           if [ -n "${out}" ]; then echo "${out}"; exit 1; fi
           test -L /etc/systemd/system/paths.target.wants/agent-env-claude-remote.path
           test -L /etc/systemd/system/multi-user.target.wants/agent-env-opencode.service
@@ -222,6 +222,15 @@ jobs:
           for _ in $(seq 30); do curl -fs -o /dev/null http://127.0.0.1:4096/ && break; sleep 1; done
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4096/api/info)" = 401
           test "$(curl -s -o /dev/null -w '%{http_code}' -u "opencode:${OPENCODE_PASSWORD}" http://127.0.0.1:4096/api/info)" = 200
+          test -L /etc/systemd/system/multi-user.target.wants/agent-env-terminal.service
+          test "$(stat -c '%a %U' /etc/agent-env/terminal.env)" = "600 root"
+          set -a && . /etc/agent-env/terminal.env && set +a
+          # ユニットの ExecStart をそのまま agent ユーザーで実行する
+          cmd="$(sed -n 's/^ExecStart=//p' /etc/systemd/system/agent-env-terminal.service)"
+          (cd /home/agent/work && runuser -u agent -- env TERMINAL_PASSWORD="${TERMINAL_PASSWORD}" bash -c "timeout 60 ${cmd}" &)
+          for _ in $(seq 30); do curl -s -o /dev/null http://127.0.0.1:7681/ && break; sleep 1; done
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7681/)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' -u "agent:${TERMINAL_PASSWORD}" http://127.0.0.1:7681/)" = 200
 
           # apply.sh: GitHub の代わりにローカルの bare リポジトリを origin にする
           git config --global user.name ci && git config --global user.email ci@example.invalid
