@@ -2,7 +2,7 @@
 # Debian 13 (trixie) の実 PC をエージェント専用ホストに仕立てる。冪等なので何度実行してもよい。
 # 初回起動時（agent-env-firstboot.service）と、管理者が手動で反映するとき（apply.sh）に実行される。
 #
-# OS パッケージ・ユーザー・更新設定に加え、エージェントのツール（Claude Code、OpenCode、mise）と
+# OS パッケージ・ユーザー・更新設定に加え、エージェントのツール（Claude Code、OpenCode、Codex、mise）と
 # その管理者用の設定まで扱う。agent ユーザーのホームに置くのは秘密情報と作業中のリポジトリだけで、ここでは扱わない。
 set -euo pipefail
 
@@ -56,19 +56,33 @@ fi
 
 log "エージェントのツールの管理者用設定"
 # ユーザー・プロジェクトの設定より優先される。root 所有なので agent ユーザーは変更できない
-install -d -m 0755 /etc/claude-code /etc/opencode
+install -d -m 0755 /etc/claude-code /etc/opencode /etc/codex
 install -m 0644 "${ENV_DIR}/system/claude-code/managed-settings.json" /etc/claude-code/
 install -m 0644 "${ENV_DIR}/system/opencode/opencode.jsonc" /etc/opencode/
 # エージェントへの指示。Claude Code は管理者用の CLAUDE.md として読み（ユーザーは除外できない）、
 # OpenCode は opencode.jsonc の instructions で読む。毎回のリクエストに含まれるので短くし、
 # ローカル LLM の呼び出し方の詳細は、必要なときにエージェントが読む別のファイルにする
 install -m 0644 "${ENV_DIR}/system/agents/instructions.md" /etc/claude-code/CLAUDE.md
+# Codex は管理者用の設定の developer_instructions で読む（TOML のリテラル文字列に入れるので ''' は使えない）
+if grep -q "'''" "${ENV_DIR}/system/agents/instructions.md"; then
+  echo "instructions.md に ''' があると Codex の設定に入れられません" >&2
+  exit 1
+fi
+# （テーブルより前に置く必要があるので先頭に書く）
+{
+  printf "# system/agents/instructions.md（bootstrap.sh が追加）\ndeveloper_instructions = '''\n"
+  cat "${ENV_DIR}/system/agents/instructions.md"
+  printf "'''\n\n"
+  cat "${ENV_DIR}/system/codex/managed_config.toml"
+} > /etc/codex/managed_config.toml.new
+chmod 0644 /etc/codex/managed_config.toml.new
+mv /etc/codex/managed_config.toml.new /etc/codex/managed_config.toml
 install -d -m 0755 /etc/agent-env
 install -m 0644 "${ENV_DIR}/system/agents/local-llm.md" /etc/agent-env/local-llm.md
 install -m 0644 "${ENV_DIR}/system/profile.d/agent-env-mise.sh" /etc/profile.d/
 install -d -m 0755 /etc/mise
 install -m 0644 "${ENV_DIR}/system/mise/config.toml" /etc/mise/config.toml
-# グローバルの言語ツール（Java、Go、pnpm）を agent ユーザーとして入れる。
+# グローバルの言語ツール（Java、Go、Node.js、pnpm）と Codex CLI を agent ユーザーとして入れる。
 # 失敗しても残りの設定は続ける（次の bootstrap で再試行する）
 if ! runuser -u "${AGENT_USER}" -- env -C "/home/${AGENT_USER}" HOME="/home/${AGENT_USER}" MISE_YES=1 mise install; then
   echo "警告: mise のツールのインストールに失敗しました。次の bootstrap（apply.sh）で再試行します" >&2

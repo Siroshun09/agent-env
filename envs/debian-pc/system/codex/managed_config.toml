@@ -1,0 +1,13 @@
+# bootstrap.sh が /etc/codex/managed_config.toml に配置する。手で編集せずリポジトリ側を直すこと。
+# 管理者用の設定で、ユーザーの config.toml より優先される（起動のたびに適用される）。
+# bootstrap.sh が先頭に developer_instructions（system/agents/instructions.md の内容）を足す
+
+# バージョンは /etc/mise/config.toml で固定し、Renovate と apply.sh で更新する
+check_for_update_on_startup = false
+
+# ローカル LLM（llama.cpp の llama-server）。使うときは codex -c model_provider=llama-cpp -m qwen3.6-35b-a3b。
+# モデル名は system/llama-models.ini のセクション名と合わせる
+[model_providers.llama-cpp]
+name = "llama.cpp（ローカル）"
+base_url = "http://127.0.0.1:8080/v1"
+wire_api = "responses"
