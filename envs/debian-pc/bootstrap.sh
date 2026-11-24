@@ -97,6 +97,30 @@ if ! runuser -u "${AGENT_USER}" -- env -C "/home/${AGENT_USER}" HOME="/home/${AG
   echo "警告: mise のツールのインストールに失敗しました。次の bootstrap（apply.sh）で再試行します" >&2
 fi
 
+log "agent ユーザーの dotfiles（.tmux.conf と .bashrc）"
+# 公開リポジトリを ~/dotfiles に置き、bootstrap のたびに最新にする。
+# .gitconfig などほかのファイルは、この PC の設定（GitHub のトークンの使い分けなど）と合わないので使わない。
+# 失敗しても残りの設定は続ける（次の bootstrap で再試行する）
+DOTFILES_REPO=https://github.com/Siroshun09/dotfiles.git
+# shellcheck disable=SC2016 # agent ユーザーの bash で展開する
+if ! runuser -u "${AGENT_USER}" -- env -C "/home/${AGENT_USER}" HOME="/home/${AGENT_USER}" bash -euo pipefail -c '
+  if [[ -d dotfiles/.git ]]; then
+    git -C dotfiles pull -q --ff-only
+  else
+    git clone -q "$1" dotfiles
+  fi
+  for f in .tmux.conf .bashrc; do
+    [[ -f "dotfiles/${f}" ]] || continue
+    # 既存のファイル（Debian の既定の .bashrc など）は一度だけ退避する
+    if [[ -e "${f}" && ! -L "${f}" && ! -e "${f}.orig" ]]; then
+      mv "${f}" "${f}.orig"
+    fi
+    ln -sfn "dotfiles/${f}" "${f}"
+  done
+' _ "${DOTFILES_REPO}"; then
+  echo "警告: dotfiles の反映に失敗しました。次の bootstrap（apply.sh）で再試行します" >&2
+fi
+
 log "GitHub のトークンの使い分け（持ち主ごとの fine-grained PAT）"
 # git はリモートの URL の持ち主、gh は操作対象のリポジトリの持ち主で、トークンを選ぶ。
 # トークン自体は agent ユーザーが agent-env-github-token set <owner> で保存する（リポジトリにも ISO にも入らない）

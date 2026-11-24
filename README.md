@@ -108,7 +108,7 @@ PC が起動すると、次のサービスが起動します。「エージェ�
 | ブラウザの端末（Claude Code、Codex など） | `ssh -N agent-box` を実行したまま、ブラウザで http://localhost:7681 を開きます。ユーザー名は `agent`、パスワードは `ssh agent-box sudo cat /etc/agent-env/terminal.env` で確認します。`claude` や `codex` をそのまま起動できます | ttyd と tmux（`agent-env-terminal.service`）。ブラウザを閉じても作業は続き、開き直すと同じ画面に戻ります。PC 内（127.0.0.1）だけで待ち受け、SSH で転送します |
 | OpenCode | `ssh -N agent-box` を実行したまま、ブラウザで http://localhost:4096 を開きます。ユーザー名は `opencode`、パスワードは `ssh agent-box sudo cat /etc/agent-env/opencode-server.env` で確認します | `opencode serve`（`agent-env-opencode.service`）。PC 内（127.0.0.1）だけで待ち受け、SSH で転送します |
 
-どのセッションも `agent` ユーザーの `~/work` で始まります。リポジトリの clone や worktree の作成はエージェントに任せます。
+どのセッションも `agent` ユーザーの `~/work` で始まります。ブラウザの端末の tmux と bash は、[dotfiles](https://github.com/Siroshun09/dotfiles) の `.tmux.conf` と `.bashrc` を使います（bootstrap が `~/dotfiles` に clone して最新にし、シンボリックリンクを張ります。動作中の tmux には `tmux source ~/.tmux.conf` で反映します）。リポジトリの clone や worktree の作成はエージェントに任せます。
 
 Claude Code の Remote Control は、Claude にログインすると自動で起動します（`agent-env-claude-remote.path`）。サービスの状態は `journalctl -u agent-env-claude-remote`、`journalctl -u agent-env-opencode`、`journalctl -u agent-env-terminal` で確認できます。bootstrap は動作中のサービスを再起動しないので、ユニットの変更は PC の再起動か `sudo systemctl restart <ユニット名>` で反映してください。
 
