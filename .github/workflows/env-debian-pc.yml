@@ -72,6 +72,10 @@ jobs:
           # エージェントのツール
           claude --version && opencode --version && mise --version && gh --version
           test -f /etc/claude-code/managed-settings.json && test -f /etc/opencode/opencode.jsonc
+          # agent ユーザーの dotfiles。tmux が設定をエラー無く読め、.tmux.conf の端末の種類（tmux-256color）が使えること
+          su - agent -c 'test "$(readlink ~/.tmux.conf)" = dotfiles/.tmux.conf && test "$(readlink ~/.bashrc)" = dotfiles/.bashrc'
+          su - agent -c 'tmux -L ci -f /dev/null new-session -d && tmux -L ci source-file ~/.tmux.conf && tmux -L ci kill-server'
+          infocmp tmux-256color >/dev/null
           # mise のグローバルの言語ツールと Codex CLI
           su - agent -c 'java -version && go version && node --version && pnpm --version && codex --version'
           # GitHub のトークンの使い分け: git は URL の持ち主、gh は操作対象のリポジトリの持ち主のトークンを使う
