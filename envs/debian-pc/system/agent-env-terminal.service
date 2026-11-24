@@ -1,0 +1,22 @@
+# ブラウザで使う agent ユーザーの端末（ttyd + tmux）。claude や codex などの CLI をブラウザから使う。
+# PC 内（127.0.0.1）だけで待ち受け、Mac からは SSH トンネルで接続する。
+# パスワードは bootstrap.sh が生成する（/etc/agent-env/terminal.env。ユーザー名は agent）
+# 状況確認: journalctl -u agent-env-terminal
+[Unit]
+Description=Browser terminal (agent)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=agent
+WorkingDirectory=/home/agent/work
+Environment=PATH=/home/agent/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/etc/agent-env/terminal.env
+# -W: 入力を許可する、-O: 別のサイトのページからの接続を拒否する。
+# tmux なので、ブラウザを閉じても作業は続き、開き直すと同じセッションに戻る
+ExecStart=/usr/local/bin/ttyd -i 127.0.0.1 -p 7681 -W -O -c agent:${TERMINAL_PASSWORD} tmux new-session -A -s main
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

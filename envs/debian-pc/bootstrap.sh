@@ -54,6 +54,15 @@ if [[ "$(/usr/local/bin/opencode --version 2>/dev/null || true)" != "opencode v$
   rm -rf "${tmp}"
 fi
 
+log "ttyd"
+if [[ "$(sha256sum /usr/local/bin/ttyd 2>/dev/null | cut -d' ' -f1)" != "${TTYD_SHA256}" ]]; then
+  tmp="$(mktemp -d)"
+  curl -fsSL -o "${tmp}/ttyd" "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.x86_64"
+  echo "${TTYD_SHA256}  ${tmp}/ttyd" | sha256sum -c --quiet
+  install -m 0755 "${tmp}/ttyd" /usr/local/bin/ttyd
+  rm -rf "${tmp}"
+fi
+
 log "エージェントのツールの管理者用設定"
 # ユーザー・プロジェクトの設定より優先される。root 所有なので agent ユーザーは変更できない
 install -d -m 0755 /etc/claude-code /etc/opencode /etc/codex
@@ -239,7 +248,7 @@ else
 fi
 
 log "Mac のブラウザから接続するためのサービス"
-# エージェントの作業場所。Remote Control と OpenCode のセッションはここで始まる。
+# エージェントの作業場所。Remote Control、OpenCode、ブラウザの端末のセッションはここで始まる。
 # agent ユーザーとして作る（root で agent のホーム以下を操作すると、agent が置いたシンボリックリンクを
 # たどって別の場所の所有者や権限を変えてしまうため）
 runuser -u "${AGENT_USER}" -- mkdir -p "/home/${AGENT_USER}/work"
@@ -248,16 +257,20 @@ install -d -m 0755 /etc/agent-env
 if [[ ! -s /etc/agent-env/opencode-server.env ]]; then
   (umask 077 && printf 'OPENCODE_PASSWORD=%s\n' "$(openssl rand -hex 16)" > /etc/agent-env/opencode-server.env)
 fi
-UNITS=(agent-env-claude-remote.service agent-env-claude-remote.path agent-env-opencode.service)
+# ブラウザの端末のパスワード（同上。確認: sudo cat /etc/agent-env/terminal.env）
+if [[ ! -s /etc/agent-env/terminal.env ]]; then
+  (umask 077 && printf 'TERMINAL_PASSWORD=%s\n' "$(openssl rand -hex 16)" > /etc/agent-env/terminal.env)
+fi
+UNITS=(agent-env-claude-remote.service agent-env-claude-remote.path agent-env-opencode.service agent-env-terminal.service)
 for u in "${UNITS[@]}"; do
   install -m 0644 "${ENV_DIR}/system/${u}" /etc/systemd/system/
 done
-systemctl enable agent-env-claude-remote.path agent-env-opencode.service
+systemctl enable agent-env-claude-remote.path agent-env-opencode.service agent-env-terminal.service
 # systemd が動いている（コンテナでの検査ではない）なら、止まっていれば起動する。
 # 動作中のサービスは再起動しない（作業中のセッションを切らないため）。ユニットの変更は次の再起動で反映される
 if [[ -d /run/systemd/system ]]; then
   systemctl daemon-reload
-  systemctl start --no-block agent-env-claude-remote.path agent-env-opencode.service
+  systemctl start --no-block agent-env-claude-remote.path agent-env-opencode.service agent-env-terminal.service
 fi
 
 log "Debian の自動セキュリティ更新"
