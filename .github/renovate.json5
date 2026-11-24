@@ -68,7 +68,7 @@
       defaultRegistryUrlTemplate: 'https://api.github.com/repos/tsl0922/ttyd/releases?per_page=100',
       format: 'json',
       transformTemplates: [
-        '{"releases": [$map($[prerelease = false], function($r) { {"version": $r.tag_name, "releaseTimestamp": $r.published_at, "digest": $substringAfter($r.assets[name = "ttyd.x86_64"].digest, "sha256:")} })[digest]]}',
+        '{"releases": [$map($[prerelease = false], function($r) { {"version": $r.tag_name, "releaseTimestamp": $r.published_at, "digest": $substringAfter($r.assets[name = "ttyd.x86_64" and $type(digest) = "string"].digest, "sha256:")} })[digest]]}',
       ],
     },
     'npm-integrity': {
