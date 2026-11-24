@@ -86,7 +86,7 @@ fi
 } > /etc/codex/managed_config.toml.new
 chmod 0644 /etc/codex/managed_config.toml.new
 mv /etc/codex/managed_config.toml.new /etc/codex/managed_config.toml
-# Codex のサンドボックスで書き込みを許可するディレクトリ（managed_config.toml の writable_roots）を作っておく
+# Codex のサンドボックスで書き込みを許可するディレクトリ（managed_config.toml の permissions.agent-env.filesystem）を作っておく
 runuser -u "${AGENT_USER}" -- env -C "/home/${AGENT_USER}" mkdir -p .gradle .m2 go .cache .npm .local/share/pnpm
 install -d -m 0755 /etc/agent-env
 install -m 0644 "${ENV_DIR}/system/agents/local-llm.md" /etc/agent-env/local-llm.md
