@@ -72,8 +72,8 @@ jobs:
           # エージェントのツール
           claude --version && opencode --version && mise --version && gh --version
           test -f /etc/claude-code/managed-settings.json && test -f /etc/opencode/opencode.jsonc
-          # mise のグローバルの言語ツール
-          su - agent -c 'java -version && go version && pnpm --version'
+          # mise のグローバルの言語ツールと Codex CLI
+          su - agent -c 'java -version && go version && node --version && pnpm --version && codex --version'
           # GitHub のトークンの使い分け: git は URL の持ち主、gh は操作対象のリポジトリの持ち主のトークンを使う
           test "$(command -v gh)" = /usr/local/bin/gh
           su - agent -c '
@@ -167,6 +167,8 @@ jobs:
           cmp /src/envs/debian-pc/system/agents/local-llm.md /etc/agent-env/local-llm.md
           grep -q "/etc/agent-env/local-llm.md" /etc/claude-code/CLAUDE.md
           grep -q '"instructions": \["/etc/claude-code/CLAUDE.md"\]' /etc/opencode/opencode.jsonc
+          # Codex は管理者用の設定の developer_instructions で読む（TOML として読めること）
+          python3 -c 'import sys, tomllib; c = tomllib.load(open("/etc/codex/managed_config.toml", "rb")); sys.exit(c["developer_instructions"] != open("/etc/claude-code/CLAUDE.md").read())'
           # 管理者用の設定は agent ユーザーの設定（ユーザー単位・プロジェクト単位）より優先される
           su - agent -c "claude update" 2>&1 | grep -q "disabled by your administrator"
           su - agent -c '
@@ -207,7 +209,7 @@ jobs:
           # GPU がある場合に入れる CUDA ランタイムの依存関係が解決できること
           apt-get install -s -q --no-install-recommends cuda-cudart-13-5 libcublas-13-5 | grep -q "^Inst libcublas-13-5 "
           # root 以外が書き換えられるファイルが無いこと（llama.cpp の配布物は 777 のディレクトリを含む）
-          test -z "$(find /opt/llama.cpp /etc/agent-env /etc/opencode /etc/claude-code -perm -o+w ! -type l)"
+          test -z "$(find /opt/llama.cpp /etc/agent-env /etc/opencode /etc/claude-code /etc/codex -perm -o+w ! -type l)"
 
           # Mac のブラウザから接続するためのサービス（systemd は動いていないので、ユニットの検証と OpenCode サーバーの単体起動）
           out="$(systemd-analyze verify /etc/systemd/system/agent-env-claude-remote.* /etc/systemd/system/agent-env-opencode.service 2>&1)"
