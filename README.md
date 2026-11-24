@@ -34,7 +34,7 @@ envs/debian-pc/                Debian 13 の実 PC
   bootstrap.sh                 PC をセットアップする（冪等）
   apply.sh                     main の変更を、確認・承認したうえで PC に反映する
   packages.txt                 インストールするパッケージ
-  tools.conf                   apt で入らないツール（OpenCode、llama.cpp）とローカル LLM のモデルのバージョンとハッシュ
+  tools.conf                   apt で入らないツール（OpenCode、ttyd、llama.cpp）とローカル LLM のモデルのバージョンとハッシュ
   system/                      systemd ユニット、apt の設定とリポジトリ、エージェントのツールの管理者用の設定、GitHub のトークンの使い分けと git のフック
 .github/workflows/             CI（静的検査、ISO のビルド、bootstrap と apply.sh のテスト）
 ```

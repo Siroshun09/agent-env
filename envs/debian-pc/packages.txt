@@ -23,8 +23,6 @@ mokutil
 claude-code
 mise
 gh
-# ブラウザで使う agent ユーザーの端末（agent-env-terminal.service。tmux と組み合わせる）
-ttyd
 # rootless podman（uidmap は Recommends なので --no-install-recommends では入らない）
 podman
 uidmap

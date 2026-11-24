@@ -63,6 +63,14 @@
         '{"releases": [$map($, function($r) { {"version": $r.tag_name, "releaseTimestamp": $r.published_at, "digest": $substringAfter($r.assets[name = "llama-" & $r.tag_name & "-bin-ubuntu-cuda-13.5-x64.tar.gz"].digest, "sha256:")} })[digest]]}',
       ],
     },
+    ttyd: {
+      // GitHub のリリースの一覧から、静的リンク版（ttyd.x86_64）の SHA256（digest）を取り出す。digest が無いリリースは除く
+      defaultRegistryUrlTemplate: 'https://api.github.com/repos/tsl0922/ttyd/releases?per_page=100',
+      format: 'json',
+      transformTemplates: [
+        '{"releases": [$map($[prerelease = false], function($r) { {"version": $r.tag_name, "releaseTimestamp": $r.published_at, "digest": $substringAfter($r.assets[name = "ttyd.x86_64"].digest, "sha256:")} })[digest]]}',
+      ],
+    },
     'npm-integrity': {
       // npm のパッケージ情報から、各バージョンの公開日時と integrity（SHA-512）を取り出す
       defaultRegistryUrlTemplate: 'https://registry.npmjs.org/{{packageName}}',

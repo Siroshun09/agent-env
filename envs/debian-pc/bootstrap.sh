@@ -54,6 +54,15 @@ if [[ "$(/usr/local/bin/opencode --version 2>/dev/null || true)" != "opencode v$
   rm -rf "${tmp}"
 fi
 
+log "ttyd"
+if [[ "$(sha256sum /usr/local/bin/ttyd 2>/dev/null | cut -d' ' -f1)" != "${TTYD_SHA256}" ]]; then
+  tmp="$(mktemp -d)"
+  curl -fsSL -o "${tmp}/ttyd" "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.x86_64"
+  echo "${TTYD_SHA256}  ${tmp}/ttyd" | sha256sum -c --quiet
+  install -m 0755 "${tmp}/ttyd" /usr/local/bin/ttyd
+  rm -rf "${tmp}"
+fi
+
 log "エージェントのツールの管理者用設定"
 # ユーザー・プロジェクトの設定より優先される。root 所有なので agent ユーザーは変更できない
 install -d -m 0755 /etc/claude-code /etc/opencode /etc/codex
