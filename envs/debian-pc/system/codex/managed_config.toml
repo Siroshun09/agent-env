@@ -5,21 +5,26 @@
 # バージョンは /etc/mise/config.toml で固定し、Renovate と apply.sh で更新する
 check_for_update_on_startup = false
 
-# サンドボックス（作業中のリポジトリ以外は書き込み不可）。ビルドツールが使うキャッシュへの書き込みと、
+# サンドボックスの権限（作業中のリポジトリ以外は書き込み不可）。ビルドツールが使うキャッシュへの書き込みと、
 # 依存のダウンロードなどのための外向きの通信を許可する（無効だと Gradle などがソケットを作れず止まる）。
-# 書き込みを許可するディレクトリは bootstrap.sh が agent ユーザーのホームに作る
-sandbox_mode = "workspace-write"
+# 旧来の sandbox_workspace_write は、組み込みのプロファイル（:workspace）が明示的に選ばれると無視されるので、
+# 権限プロファイルを定義して既定にする。書き込みを許可するディレクトリは bootstrap.sh が agent ユーザーのホームに作る
+default_permissions = "agent-env"
 
-[sandbox_workspace_write]
-network_access = true
-writable_roots = [
-  "/home/agent/.gradle",
-  "/home/agent/.m2",
-  "/home/agent/go",
-  "/home/agent/.cache",
-  "/home/agent/.npm",
-  "/home/agent/.local/share/pnpm",
-]
+[permissions.agent-env]
+description = "Workspace write plus build-tool caches and outbound network"
+extends = ":workspace"
+
+[permissions.agent-env.filesystem]
+"/home/agent/.gradle" = "write"
+"/home/agent/.m2" = "write"
+"/home/agent/go" = "write"
+"/home/agent/.cache" = "write"
+"/home/agent/.npm" = "write"
+"/home/agent/.local/share/pnpm" = "write"
+
+[permissions.agent-env.network]
+enabled = true
 
 # ローカル LLM（llama.cpp の llama-server）。使うときは codex -c model_provider=llama-cpp -m qwen3.6-35b-a3b。
 # モデル名は system/llama-models.ini のセクション名と合わせる

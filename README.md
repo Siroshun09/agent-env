@@ -70,7 +70,7 @@ ssh -t agent-box sudo -iu agent
 `agent` ユーザーで次を実行します。
 - Claude Code: `cd ~/work && claude` を起動してログインします。表示された URL を Mac のブラウザで開いて認証します。続けて表示される `~/work` を信頼するかの確認で、信頼を選びます（Remote Control は、信頼済みのフォルダーでしか動きません）。
 - OpenCode: `opencode` を起動し（ブラウザの Web UI からでも可）、`/connect` で OpenAI を選んで ChatGPT のプランでサインインします。管理者用の設定で、OpenAI とローカル LLM 以外のモデル提供元は使えないようにしています。
-- Codex: `codex login --device-auth` で ChatGPT のプランでサインインします（ブラウザの無い PC なので、表示されたコードを Mac のブラウザで入力します）。サンドボックスは管理者用の設定で、作業中のリポジトリに加えてビルドツールのキャッシュ（`~/.gradle`、`~/.m2`、`~/go`、`~/.cache` など）への書き込みと、外向きの通信を許可しています。
+- Codex: `codex login --device-auth` で ChatGPT のプランでサインインします（ブラウザの無い PC なので、表示されたコードを Mac のブラウザで入力します）。サンドボックスは管理者用の設定の権限プロファイル `agent-env`（既定）で、作業中のリポジトリに加えてビルドツールのキャッシュ（`~/.gradle`、`~/.m2`、`~/go`、`~/.cache` など）への書き込みと、外向きの通信を許可しています。
 - GitHub: [fine-grained personal access token](https://github.com/settings/personal-access-tokens) を、リポジトリの持ち主（個人と各 org）ごとに 1 枚ずつ発行し、`agent-env-github-token set <持ち主>` で保存します（トークンを貼り付け、Enter と Ctrl+D）。fine-grained PAT は 1 枚で 1 つの持ち主のリポジトリにしか使えないためです。
   - トークンは対象のリポジトリに限定し、権限は Contents と Pull requests の Read and write だけにして、有効期限を付けてください。org のトークンは、org の設定で fine-grained PAT が許可されている必要があります（管理者の承認が必要な場合もあります）。`main` へのマージはブランチ保護で防ぎます。
   - git は接続先の URL（`https://github.com/<持ち主>/...`）、gh は操作対象のリポジトリ（`-R`、`gh repo clone <持ち主>/<名前>`、今いるリポジトリの `gh repo set-default` やリモートなど）から持ち主を判断し、そのトークンを使います。エージェントは使い分けを意識する必要はありません。
