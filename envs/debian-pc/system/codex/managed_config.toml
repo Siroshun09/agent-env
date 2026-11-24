@@ -5,6 +5,22 @@
 # バージョンは /etc/mise/config.toml で固定し、Renovate と apply.sh で更新する
 check_for_update_on_startup = false
 
+# サンドボックス（作業中のリポジトリ以外は書き込み不可）。ビルドツールが使うキャッシュへの書き込みと、
+# 依存のダウンロードなどのための外向きの通信を許可する（無効だと Gradle などがソケットを作れず止まる）。
+# 書き込みを許可するディレクトリは bootstrap.sh が agent ユーザーのホームに作る
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = true
+writable_roots = [
+  "/home/agent/.gradle",
+  "/home/agent/.m2",
+  "/home/agent/go",
+  "/home/agent/.cache",
+  "/home/agent/.npm",
+  "/home/agent/.local/share/pnpm",
+]
+
 # ローカル LLM（llama.cpp の llama-server）。使うときは codex -c model_provider=llama-cpp -m qwen3.6-35b-a3b。
 # モデル名は system/llama-models.ini のセクション名と合わせる
 [model_providers.llama-cpp]

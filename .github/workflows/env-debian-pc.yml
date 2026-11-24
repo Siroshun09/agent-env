@@ -173,6 +173,9 @@ jobs:
           grep -q '"instructions": \["/etc/claude-code/CLAUDE.md"\]' /etc/opencode/opencode.jsonc
           # Codex は管理者用の設定の developer_instructions で読む（TOML として読めること）
           python3 -c 'import sys, tomllib; c = tomllib.load(open("/etc/codex/managed_config.toml", "rb")); sys.exit(c["developer_instructions"] != open("/etc/claude-code/CLAUDE.md").read())'
+          # Codex のサンドボックスで書き込みを許可するディレクトリが、agent ユーザーの所有で存在すること
+          python3 -c 'import tomllib; print("\n".join(tomllib.load(open("/etc/codex/managed_config.toml", "rb"))["sandbox_workspace_write"]["writable_roots"]))' \
+            | while read -r d; do test "$(stat -c %U "${d}")" = agent; done
           # 管理者用の設定は agent ユーザーの設定（ユーザー単位・プロジェクト単位）より優先される
           su - agent -c "claude update" 2>&1 | grep -q "disabled by your administrator"
           su - agent -c '
