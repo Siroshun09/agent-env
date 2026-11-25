@@ -5,6 +5,6 @@
 java = "27.0.1.1+4"
 go = "1.27.4"
 node = "26.13.1"
-pnpm = "12.21.0"
+pnpm = "12.22.0"
 # Codex CLI（npm で入れるので node が要る。設定は /etc/codex/managed_config.toml）
 "npm:@openai/codex" = "0.172.0"
