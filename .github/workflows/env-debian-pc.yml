@@ -78,6 +78,9 @@ jobs:
           infocmp tmux-256color >/dev/null
           # mise のグローバルの言語ツールと Codex CLI
           su - agent -c 'java -version && go version && node --version && pnpm --version && codex --version'
+          # Codex のサンドボックス用の bubblewrap と、ローカル LLM を Codex 経由で呼ぶコマンド（サーバーが無ければすぐ失敗する）
+          command -v bwrap
+          su - agent -c 'if local-llm hello < /dev/null 2> /tmp/local-llm.err; then exit 1; fi; grep -q "接続できません" /tmp/local-llm.err'
           # GitHub のトークンの使い分け: git は URL の持ち主、gh は操作対象のリポジトリの持ち主のトークンを使う
           test "$(command -v gh)" = /usr/local/bin/gh
           su - agent -c '

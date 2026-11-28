@@ -30,7 +30,8 @@ extends = ":workspace"
 [permissions.agent-env.network]
 enabled = true
 
-# ローカル LLM（llama.cpp の llama-server）。使うときは codex -c model_provider=llama-cpp -m qwen3.6-35b-a3b。
+# ローカル LLM（llama.cpp の llama-server）。使うときは codex -c model_provider=llama-cpp -m qwen3.6-35b-a3b
+# （一度だけ実行して応答だけを見るときは local-llm コマンド。system/codex/local-llm.sh）。
 # モデル名は system/llama-models.ini のセクション名と合わせる
 [model_providers.llama-cpp]
 name = "llama.cpp（ローカル）"
