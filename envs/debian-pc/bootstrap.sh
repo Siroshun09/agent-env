@@ -40,10 +40,6 @@ fi
 # shellcheck disable=SC1091 # 変数を定義するだけのファイル
 source "${ENV_DIR}/tools.conf"
 
-# OpenCode はやめた（Codex の codex exec で代わりになる）。以前の環境から消す（次回以降は不要）
-rm -f /usr/local/bin/opencode
-rm -rf /etc/opencode
-
 log "ttyd"
 if [[ "$(sha256sum /usr/local/bin/ttyd 2>/dev/null | cut -d' ' -f1)" != "${TTYD_SHA256}" ]]; then
   tmp="$(mktemp -d)"
