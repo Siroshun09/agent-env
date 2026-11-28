@@ -142,7 +142,7 @@ NVIDIA の GPU がある PC では、llama.cpp の `llama-server` がサービ�
 - Codex からは `codex -c model_provider=llama-cpp -m qwen3.6-35b-a3b` で使えます（Responses API で接続します）。`claude -p` のように一度だけ実行して応答だけを見るときは `local-llm "…"` を使います（中身は `codex exec`。`cat file | local-llm "要約して"` のように標準入力も渡せます。Codex のログは失敗したときだけ表示します）。スクリプトなどからは `http://127.0.0.1:8080/v1` を直接呼び、`"model"` にモデル名を指定します。
 - Mac からは、`ssh -N agent-box` を実行したまま http://llm.agent-box.localhost を開くとチャット画面を使えます。
 - Claude Code と Codex には、ローカル LLM を使う場面を指示しています（`envs/debian-pc/system/agents/instructions.md`）。外に出したくないデータの処理、大量のテキストの下処理、意味での検索などで使い、コードの設計や実装など品質が重要な作業には使いません。Claude Code は管理者用の CLAUDE.md（`/etc/claude-code/CLAUDE.md`）として、Codex は管理者用の設定の `developer_instructions` として読みます。
-  - この指示は毎回のリクエストに含まれるので短くしています。呼び出し方の詳細（`agents/local-llm.md`、PC では `/etc/agent-env/local-llm.md`）は、使うときにエージェントが読みます。
+  - 文章の処理には `local-llm` コマンドを使うよう指示しています。この指示は毎回のリクエストに含まれるので短くしています。画像、埋め込み、入力の上限などの詳細（`agents/local-llm.md`、PC では `/etc/agent-env/local-llm.md`）は、必要なときにエージェントが読みます。
 - モデルを追加・削除するときは、`tools.conf` の `LLAMA_FILES`、`system/llama-models.ini` を書き換えます。`tools.conf` から消したファイルは、次の bootstrap で消えます。モデルは / （128GB）に置くので、合計サイズに注意してください。
 - llama.cpp は毎日リリースされるので、Renovate の更新 PR は週 1 回です。バージョンと SHA256（GitHub がリリースの添付ファイルごとに公開している値）を一緒に更新します。
 

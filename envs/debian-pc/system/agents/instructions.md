@@ -4,4 +4,6 @@ A local LLM is available on this PC at `http://127.0.0.1:8080/v1` (OpenAI-compat
 - Summarizing, classifying, or extracting from many files or large logs; transcribing images
 - Semantic search with embeddings
 
-Do not use it for quality-critical work such as code design, implementation, or review, or for small amounts of text. Read `/etc/agent-env/local-llm.md` before using it (model names and how to call it).
+Do not use it for quality-critical work such as code design, implementation, or review, or for small amounts of text.
+
+Call it with `local-llm "<instruction>" < <file>` (or `< /dev/null` when there is no input); only the answer is printed. If it says the server cannot be reached, proceed without it. For images, embeddings, input size limits, and details, read `/etc/agent-env/local-llm.md`.

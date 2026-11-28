@@ -7,18 +7,26 @@ llama.cpp's llama-server runs at `http://127.0.0.1:8080/v1` (OpenAI-compatible, 
 | `qwen3.6-35b-a3b` | Text generation and image understanding. Context: 65536 tokens |
 | `qwen3-embedding-0.6b` | Embeddings (`/v1/embeddings`) |
 
-- First check that it is running with `curl -sf http://127.0.0.1:8080/models`. If it cannot be reached (e.g. a PC without a GPU), proceed without the local LLM.
-- A model is loaded on its first call, which can take tens of seconds or more. Use a long timeout (about 10 minutes). Generation is not fast either, so send requests one at a time instead of many in parallel.
-- The answer is in `.choices[0].message.content` (reasoning is returned separately in `reasoning_content`).
 - It is less capable than you and can make mistakes. Check the source before relying on its output for important decisions.
+- A model is loaded on its first call, which can take tens of seconds or more. Generation is not fast either, so send requests one at a time instead of many in parallel.
 
-Process a file's contents:
+## Text: the `local-llm` command
+
+`local-llm "<instruction>"` asks `qwen3.6-35b-a3b` and prints only the final answer (it runs `codex exec`; Codex's own output is shown only on failure). Standard input is attached to the prompt.
 
 ```bash
-jq -n --rawfile text app.log '{model: "qwen3.6-35b-a3b", messages: [{role: "user", content: ("List the error types in this log with their counts.\n\n" + $text)}]}' \
-  | curl -sf --max-time 600 http://127.0.0.1:8080/v1/chat/completions -H 'Content-Type: application/json' -d @- \
-  | jq -r '.choices[0].message.content'
+local-llm "List the error types in this log with their counts." < app.log
+git diff | local-llm "Summarize what this diff changes, one line per file."
+local-llm "Translate to English: こんにちは" < /dev/null
 ```
+
+- Always redirect standard input (a file, a pipe, or `/dev/null`). Otherwise it can wait forever for input.
+- If the server is not running (e.g. a PC without a GPU), it exits with an error right away. Proceed without the local LLM.
+- The context is 65536 tokens including Codex's own prompt. Keep each input to about 40,000 tokens (roughly 100 KB of English or code, less for Japanese) and split larger inputs.
+
+## Images, embeddings, and scripts: the API
+
+Call `http://127.0.0.1:8080/v1` directly with a long timeout (about 10 minutes). The answer is in `.choices[0].message.content` (reasoning is returned separately in `reasoning_content`). `curl -sf http://127.0.0.1:8080/models` checks that it is running.
 
 Read an image:
 
