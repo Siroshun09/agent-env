@@ -74,8 +74,8 @@ mv /etc/codex/managed_config.toml.new /etc/codex/managed_config.toml
 runuser -u "${AGENT_USER}" -- env -C "/home/${AGENT_USER}" mkdir -p .gradle .m2 go .cache .npm .local/share/pnpm
 install -d -m 0755 /etc/agent-env
 install -m 0644 "${ENV_DIR}/system/agents/local-llm.md" /etc/agent-env/local-llm.md
-# ローカル LLM に Codex 経由で依頼し、応答だけを表示するコマンド
-install -m 0755 "${ENV_DIR}/system/codex/local-llm.sh" /usr/local/bin/local-llm
+# ローカル LLM に一度だけ依頼し、応答だけを表示するコマンド
+install -m 0755 "${ENV_DIR}/system/agents/local-llm.sh" /usr/local/bin/local-llm
 install -m 0644 "${ENV_DIR}/system/profile.d/agent-env-mise.sh" /etc/profile.d/
 install -d -m 0755 /etc/mise
 install -m 0644 "${ENV_DIR}/system/mise/config.toml" /etc/mise/config.toml
