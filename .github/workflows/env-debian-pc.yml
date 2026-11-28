@@ -45,7 +45,8 @@ jobs:
           sed "s|/opt/agent-env|${GITHUB_WORKSPACE}|g" system/agent-env-firstboot.service > "${dir}/agent-env-firstboot.service"
           out="$(systemd-analyze verify "${dir}"/* 2>&1)"
           if [ -n "${out}" ]; then echo "${out}"; exit 1; fi
-      - name: dashboard.html の外部ファイル
+      - name: 監視の概要ページ（dashboard.html）の外部ファイル
+        working-directory: envs/debian-pc/gateway/web
         run: |
           # 外部から読み込むファイルはすべて integrity（SRI）付きで、値が正しいこと。
           # Renovate は版だけを更新するので、違えば正しい値を表示する（それで dashboard.html を直す）
@@ -58,6 +59,33 @@ jobs:
             got="sha384-$(curl -fsSL "${url}" | openssl dgst -sha384 -binary | base64 -w0)"
             if [ "${got}" != "${want}" ]; then echo "${url}: integrity=\"${got}\""; exit 1; fi
           done < /tmp/sri
+
+  gateway:
+    # ゲートウェイ（gateway/）の検査とテスト。Go は bootstrap.sh と同じく tools.conf で固定したものを使う
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Go
+        run: |
+          # shellcheck disable=SC1091
+          source tools.conf
+          curl -fsSL -o "${RUNNER_TEMP}/go.tar.gz" "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
+          echo "${GO_SHA256}  ${RUNNER_TEMP}/go.tar.gz" | sha256sum -c -
+          tar -xzf "${RUNNER_TEMP}/go.tar.gz" -C "${RUNNER_TEMP}"
+          echo "${RUNNER_TEMP}/go/bin" >> "${GITHUB_PATH}"
+      - name: gofmt、vet、test
+        working-directory: envs/debian-pc/gateway
+        env:
+          GOTOOLCHAIN: local
+          GOPROXY: "off"
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "${out}" ]; then echo "gofmt が必要: ${out}"; exit 1; fi
+          go vet ./...
+          go test ./...
 
   bootstrap:
     # Debian 13 コンテナで bootstrap を2回実行し、冪等に成功することを確認する。
@@ -276,12 +304,23 @@ jobs:
           vm_query() { local r; r="$(curl -s http://127.0.0.1:8428/api/v1/query --data-urlencode "query=$1")"; grep -qF -- "$2" <<< "${r}"; }
           for _ in $(seq 60); do vm_query 'up{job="node"} == 1' '"job":"node"' && break; sleep 1; done
           vm_query 'up{job="node"} == 1' '"job":"node"'
-          # 概要ページ（dashboard.html）: どの問い合わせも文法が正しいこと
+          # ゲートウェイ（ユニットの ExecStart をそのまま nobody で実行する）
+          cmd="$(sed -n 's/^ExecStart=//p' /etc/systemd/system/agent-env-gateway.service)"
+          (setpriv --reuid=nobody --regid=nogroup --clear-groups bash -c "exec ${cmd}" > /tmp/gateway.log 2>&1 &)
+          for _ in $(seq 30); do curl -s -o /dev/null -H 'Host: localhost:8700' http://127.0.0.1:8700/ && break; sleep 1; done
+          # gw_code <Host> <パス> [curl の引数...]
+          gw_code() { local host="$1" path="$2"; shift 2; curl -s -o /dev/null -w '%{http_code}' -H "Host: ${host}" "$@" "http://127.0.0.1:8700${path}"; }
+          test "$(gw_code localhost:8700 /)" = 200
+          test "$(gw_code dash.localhost:8700 /)" = 200
+          test "$(gw_code evil.example:8700 /)" = 421
+          test "$(gw_code dash.localhost:8700 '/api/v1/query?query=up' -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: cors')" = 403
+          test "$(gw_code dash.localhost:8700 '/api/v1/admin/tsdb/delete_series?match[]=x')" = 404
+          # 概要ページ（dashboard.html）: どの問い合わせも文法が正しいこと（ゲートウェイ経由で問い合わせる）
           python3 -c 'import json, re, sys; html = open(sys.argv[1]).read(); m = re.search(r"<script type=\"application/json\" id=\"panels\">(.*?)</script>", html, re.S); print("\n".join(s["expr"] for sec in json.loads(m.group(1)) for p in sec["panels"] for s in p["series"]))' \
-            /src/envs/debian-pc/dashboard.html > /tmp/dash-exprs
+            /src/envs/debian-pc/gateway/web/dashboard.html > /tmp/dash-exprs
           test "$(wc -l < /tmp/dash-exprs)" -ge 10
           while IFS= read -r q; do
-            r="$(curl -s http://127.0.0.1:8428/api/v1/query_range --data-urlencode "query=${q}" -d start=-1h -d step=30s)"
+            r="$(curl -s -G -H 'Host: dash.localhost:8700' http://127.0.0.1:8700/api/v1/query_range --data-urlencode "query=${q}" -d start=-1h -d step=30s)"
             jq -e '.status == "success"' <<< "${r}" > /dev/null || { echo "${q}: ${r}"; exit 1; }
           done < /tmp/dash-exprs
           # 削除などの管理用 API は鍵が必要
@@ -328,9 +367,10 @@ jobs:
           kill "$(cat /tmp/fake-llm.pid)"
 
           # Mac のブラウザから接続するためのサービス（systemd は動いていないので、ユニットの検証と、ブラウザの端末の単体起動）
-          out="$(systemd-analyze verify /etc/systemd/system/agent-env-terminal.service 2>&1)"
+          out="$(cd /etc/systemd/system && systemd-analyze verify agent-env-terminal.service agent-env-gateway.service 2>&1)"
           if [ -n "${out}" ]; then echo "${out}"; exit 1; fi
           test -L /etc/systemd/system/multi-user.target.wants/agent-env-terminal.service
+          test -L /etc/systemd/system/multi-user.target.wants/agent-env-gateway.service
           test "$(stat -c '%a %U' /etc/agent-env/terminal.env)" = "600 root"
           set -a && . /etc/agent-env/terminal.env && set +a
           # ユニットの ExecStart をそのまま agent ユーザーで実行する
@@ -339,6 +379,11 @@ jobs:
           for _ in $(seq 30); do curl -s -o /dev/null http://127.0.0.1:7681/ && break; sleep 1; done
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7681/)" = 401
           test "$(curl -s -o /dev/null -w '%{http_code}' -u "agent:${TERMINAL_PASSWORD}" http://127.0.0.1:7681/)" = 200
+          # ゲートウェイ経由でも同じ（Basic 認証はそのまま届く）
+          test "$(gw_code term.localhost:8700 /)" = 401
+          test "$(gw_code term.localhost:8700 / -u "agent:${TERMINAL_PASSWORD}")" = 200
+          # ビルドに使った Go を記録している（Go かソースが変わったときだけビルドし直すため）
+          grep -q "^$(sed -n 's/^GO_SHA256=//p' /src/envs/debian-pc/tools.conf) " /usr/local/lib/agent-env/agent-env-gateway.stamp
 
           # apply.sh: GitHub の代わりにローカルの bare リポジトリを origin にする
           git config --global user.name ci && git config --global user.email ci@example.invalid

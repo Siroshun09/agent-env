@@ -1,6 +1,6 @@
 # 指標の保存と、指標を見る画面（vmui）。PC 内（127.0.0.1:8428）だけで待ち受ける。
 # Claude Code と Codex からは OpenTelemetry で受け取り、node_exporter・llama-server・VictoriaLogs からは取りに行く（scrape.yml）。
-# 画面: Mac で ssh -N agent-box を実行したまま http://localhost:8428/vmui（主要な指標は envs/debian-pc/dashboard.html。README の「監視」）
+# 画面: Mac で ssh -N agent-box を実行したまま http://metrics.localhost:8700/vmui/（主要な指標は http://dash.localhost:8700。README の「監視」）
 # 状況確認: journalctl -u agent-env-victoriametrics
 [Unit]
 Description=VictoriaMetrics (metrics storage)
