@@ -99,20 +99,20 @@ Host agent-box
 再インストールすると SSH のホスト鍵が変わります。`ssh-keygen -R agent-box.local` で古い鍵を削除し、初回接続時に表示される fingerprint が、PC のログイン画面に表示される `SSH host key:` と一致することを確認してください。
 
 ### ブラウザで開く画面
-`ssh -N agent-box` を実行したまま、Mac のブラウザで http://localhost:8700 を開くと、PC 内の画面の一覧が表示されます。
+`ssh -N agent-box` を実行したまま、Mac のブラウザで http://agent-box.localhost:8700 を開くと、PC 内の画面の一覧が表示されます。
 
 | 画面 | URL |
 |---|---|
-| ブラウザの端末 | http://term.localhost:8700 |
-| 監視の概要 | http://dash.localhost:8700 |
-| ローカル LLM のチャット画面 | http://llm.localhost:8700 |
-| 指標（vmui） | http://metrics.localhost:8700/vmui/ |
-| ログ（vmui） | http://logs.localhost:8700/select/vmui/ |
+| ブラウザの端末 | http://term.agent-box.localhost:8700 |
+| 監視の概要 | http://dash.agent-box.localhost:8700 |
+| ローカル LLM のチャット画面 | http://llm.agent-box.localhost:8700 |
+| 指標（vmui） | http://metrics.agent-box.localhost:8700/vmui/ |
+| ログ（vmui） | http://logs.agent-box.localhost:8700/select/vmui/ |
 
 - PC 内のゲートウェイ（`envs/debian-pc/gateway/`、`agent-env-gateway.service`）が、ホスト名で各サービスに振り分けます。SSH の転送は 1 本で済み、画面を増やしても `~/.ssh/config` は変わりません。
 - 画面ごとにホスト名（オリジン）を分けているので、ある画面に不具合（XSS など）があっても、ほかの画面（端末など）はブラウザが守ります。
 - ゲートウェイは、知らないホスト名（DNS リバインディング）、別のサイトのページからのリクエスト、別のサイトのページへの埋め込みを拒否します。別のサイトのページから PC 内の画面を読んだり操作したりはできません。
-- `*.localhost` は、Chrome と Firefox はブラウザ自身が 127.0.0.1 に解決します。Safari で開けない場合は、Mac の `/etc/hosts` に `127.0.0.1 term.localhost dash.localhost llm.localhost metrics.localhost logs.localhost` を追加してください。
+- `*.localhost`（`agent-box.localhost` とその下）は、Chrome と Firefox はブラウザ自身が 127.0.0.1 に解決します。Safari で開けない場合は、Mac の `/etc/hosts` に `127.0.0.1 agent-box.localhost term.agent-box.localhost dash.agent-box.localhost llm.agent-box.localhost metrics.agent-box.localhost logs.agent-box.localhost` を追加してください。
 - ゲートウェイは Go の標準ライブラリだけで書いていて、bootstrap が `tools.conf` で固定した Go でビルドします（agent ユーザーが書き換えられる mise の Go は使いません）。Go の更新（Renovate の PR）には標準ライブラリのセキュリティ修正が含まれるので、放置せずに反映してください。
 
 ### ブラウザからエージェントを使う
@@ -120,7 +120,7 @@ PC が起動すると、次のサービスが起動します。「エージェ�
 
 | | 使い方 | 仕組み |
 |---|---|---|
-| ブラウザの端末（Claude Code、Codex など） | `ssh -N agent-box` を実行したまま、ブラウザで http://term.localhost:8700 を開きます。ユーザー名は `agent`、パスワードは `ssh agent-box sudo cat /etc/agent-env/terminal.env` で確認します。`claude`、`codex` をそのまま起動できます | ttyd と tmux（`agent-env-terminal.service`）。ブラウザを閉じても作業は続き、開き直すと同じ画面に戻ります。PC 内（127.0.0.1）だけで待ち受け、ゲートウェイを通して開きます |
+| ブラウザの端末（Claude Code、Codex など） | `ssh -N agent-box` を実行したまま、ブラウザで http://term.agent-box.localhost:8700 を開きます。ユーザー名は `agent`、パスワードは `ssh agent-box sudo cat /etc/agent-env/terminal.env` で確認します。`claude`、`codex` をそのまま起動できます | ttyd と tmux（`agent-env-terminal.service`）。ブラウザを閉じても作業は続き、開き直すと同じ画面に戻ります。PC 内（127.0.0.1）だけで待ち受け、ゲートウェイを通して開きます |
 
 どのセッションも `agent` ユーザーの `~/work` で始まります。ブラウザの端末の tmux と bash は、[dotfiles](https://github.com/Siroshun09/dotfiles) の `.tmux.conf` と `.bashrc` を使います（bootstrap が `~/dotfiles` に clone して最新にし、シンボリックリンクを張ります。動作中の tmux には `tmux source ~/.tmux.conf` で反映します）。リポジトリの clone や worktree の作成はエージェントに任せます。
 
@@ -138,7 +138,7 @@ NVIDIA の GPU がある PC では、llama.cpp の `llama-server` がサービ�
 
 - llama-server はルーターモードで動き、リクエストの `"model"` で指定されたモデルを必要になった時点で読み込みます（同時に 2 つまで）。初回の呼び出しは読み込みの分だけ遅くなります。
 - Codex からは `codex -c model_provider=llama-cpp -m qwen3.6-35b-a3b` で使えます（Responses API で接続します）。`claude -p` のように一度だけ実行して応答だけを見るときは `local-llm "…"` を使います（中身は `codex exec`。`cat file | local-llm "要約して"` のように標準入力も渡せます。Codex のログは失敗したときだけ表示します）。スクリプトなどからは `http://127.0.0.1:8080/v1` を直接呼び、`"model"` にモデル名を指定します。
-- Mac からは、`ssh -N agent-box` を実行したまま http://llm.localhost:8700 を開くとチャット画面を使えます。
+- Mac からは、`ssh -N agent-box` を実行したまま http://llm.agent-box.localhost:8700 を開くとチャット画面を使えます。
 - Claude Code と Codex には、ローカル LLM を使う場面を指示しています（`envs/debian-pc/system/agents/instructions.md`）。外に出したくないデータの処理、大量のテキストの下処理、意味での検索などで使い、コードの設計や実装など品質が重要な作業には使いません。Claude Code は管理者用の CLAUDE.md（`/etc/claude-code/CLAUDE.md`）として、Codex は管理者用の設定の `developer_instructions` として読みます。
   - この指示は毎回のリクエストに含まれるので短くしています。呼び出し方の詳細（`agents/local-llm.md`、PC では `/etc/agent-env/local-llm.md`）は、使うときにエージェントが読みます。
 - モデルを追加・削除するときは、`tools.conf` の `LLAMA_FILES`、`system/llama-models.ini` を書き換えます。`tools.conf` から消したファイルは、次の bootstrap で消えます。モデルは / （128GB）に置くので、合計サイズに注意してください。
@@ -154,8 +154,8 @@ NVIDIA の GPU がある PC では、llama.cpp の `llama-server` がサービ�
 | ローカル LLM（トークン数、処理速度、待ちの数など） | llama-server の `--metrics`。読み込まれているモデルの分だけ取れる | 同上 |
 | Claude Code と Codex（`local-llm` を含む）の利用状況 | 管理者用の設定で OpenTelemetry を有効にし、エージェントから送る | 指標（トークン数、所要時間など）は VictoriaMetrics、イベント（API の呼び出し、ツールの実行など）は VictoriaLogs |
 
-- 主要な指標（CPU、メモリ、ディスク、GPU、ローカル LLM、エージェント）は、`ssh -N agent-box` を実行したまま http://dash.localhost:8700 を開くと 1 ページで見られます（30 秒ごとに更新）。ページは `envs/debian-pc/gateway/web/dashboard.html` で、グラフの描画には uPlot を jsDelivr から読み込みます（版と SRI ハッシュで固定）。
-- 細かく調べるとき（範囲の拡大、任意のクエリ）は、指標は http://metrics.localhost:8700/vmui/ 、ログは http://logs.localhost:8700/select/vmui/ を使います。
+- 主要な指標（CPU、メモリ、ディスク、GPU、ローカル LLM、エージェント）は、`ssh -N agent-box` を実行したまま http://dash.agent-box.localhost:8700 を開くと 1 ページで見られます（30 秒ごとに更新）。ページは `envs/debian-pc/gateway/web/dashboard.html` で、グラフの描画には uPlot を jsDelivr から読み込みます（版と SRI ハッシュで固定）。
+- 細かく調べるとき（範囲の拡大、任意のクエリ）は、指標は http://metrics.agent-box.localhost:8700/vmui/ 、ログは http://logs.agent-box.localhost:8700/select/vmui/ を使います。
 - 指標は 90 日、ログは 30 日（上限 5GiB）保存します。ディスクの空きが 5GiB を下回ると書き込みを止めます。メモリと CPU の使用には上限を設け、エージェントと llama-server を優先します。
 - プロンプトと応答の本文、ツールの引数と出力（コマンドの内容など）は記録しません（Codex は既定で送ってくるので、VictoriaLogs が受け取るときに捨てます）。Claude Code のイベントには、ログインしているアカウントのメールアドレスと組織 ID が含まれます（PC の中だけに保存されます）。
 - エージェントの利用状況はエージェント自身が送るので、`agent` ユーザーが止めたり、偽の値を足したりできます。資源と利用状況を見るためのもので、監査には使えません。過去のデータの削除などの管理用 API には、root しか読めない鍵（`/etc/agent-env/monitoring-admin.key`）が必要です。

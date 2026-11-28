@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- ゲートウェイの一覧のページ（http://localhost:8700）。各画面は、ホスト名ごとに別のオリジンで開く -->
+<!-- ゲートウェイの一覧のページ（http://agent-box.localhost:8700）。各画面は、ホスト名ごとに別のオリジンで開く -->
 <html lang="ja">
 <head>
 <meta charset="utf-8">
@@ -33,10 +33,10 @@
   </ul>
 </main>
 <script>
-  // 各画面のホスト名は <名前>.localhost で、ポートはこのページと同じ
+  // 各画面のホスト名は <名前>.<このページのホスト名> で、ポートはこのページと同じ
   const port = location.port ? `:${location.port}` : "";
   for (const a of document.querySelectorAll("a[data-host]")) {
-    a.href = `${location.protocol}//${a.dataset.host}.localhost${port}${a.dataset.path}`;
+    a.href = `${location.protocol}//${a.dataset.host}.${location.hostname}${port}${a.dataset.path}`;
   }
 </script>
 </body>

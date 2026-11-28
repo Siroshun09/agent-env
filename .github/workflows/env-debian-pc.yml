@@ -307,20 +307,20 @@ jobs:
           # ゲートウェイ（ユニットの ExecStart をそのまま nobody で実行する）
           cmd="$(sed -n 's/^ExecStart=//p' /etc/systemd/system/agent-env-gateway.service)"
           (setpriv --reuid=nobody --regid=nogroup --clear-groups bash -c "exec ${cmd}" > /tmp/gateway.log 2>&1 &)
-          for _ in $(seq 30); do curl -s -o /dev/null -H 'Host: localhost:8700' http://127.0.0.1:8700/ && break; sleep 1; done
+          for _ in $(seq 30); do curl -s -o /dev/null -H 'Host: agent-box.localhost:8700' http://127.0.0.1:8700/ && break; sleep 1; done
           # gw_code <Host> <パス> [curl の引数...]
           gw_code() { local host="$1" path="$2"; shift 2; curl -s -o /dev/null -w '%{http_code}' -H "Host: ${host}" "$@" "http://127.0.0.1:8700${path}"; }
-          test "$(gw_code localhost:8700 /)" = 200
-          test "$(gw_code dash.localhost:8700 /)" = 200
+          test "$(gw_code agent-box.localhost:8700 /)" = 200
+          test "$(gw_code dash.agent-box.localhost:8700 /)" = 200
           test "$(gw_code evil.example:8700 /)" = 421
-          test "$(gw_code dash.localhost:8700 '/api/v1/query?query=up' -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: cors')" = 403
-          test "$(gw_code dash.localhost:8700 '/api/v1/admin/tsdb/delete_series?match[]=x')" = 404
+          test "$(gw_code dash.agent-box.localhost:8700 '/api/v1/query?query=up' -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: cors')" = 403
+          test "$(gw_code dash.agent-box.localhost:8700 '/api/v1/admin/tsdb/delete_series?match[]=x')" = 404
           # 概要ページ（dashboard.html）: どの問い合わせも文法が正しいこと（ゲートウェイ経由で問い合わせる）
           python3 -c 'import json, re, sys; html = open(sys.argv[1]).read(); m = re.search(r"<script type=\"application/json\" id=\"panels\">(.*?)</script>", html, re.S); print("\n".join(s["expr"] for sec in json.loads(m.group(1)) for p in sec["panels"] for s in p["series"]))' \
             /src/envs/debian-pc/gateway/web/dashboard.html > /tmp/dash-exprs
           test "$(wc -l < /tmp/dash-exprs)" -ge 10
           while IFS= read -r q; do
-            r="$(curl -s -G -H 'Host: dash.localhost:8700' http://127.0.0.1:8700/api/v1/query_range --data-urlencode "query=${q}" -d start=-1h -d step=30s)"
+            r="$(curl -s -G -H 'Host: dash.agent-box.localhost:8700' http://127.0.0.1:8700/api/v1/query_range --data-urlencode "query=${q}" -d start=-1h -d step=30s)"
             jq -e '.status == "success"' <<< "${r}" > /dev/null || { echo "${q}: ${r}"; exit 1; }
           done < /tmp/dash-exprs
           # 削除などの管理用 API は鍵が必要
@@ -380,8 +380,8 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7681/)" = 401
           test "$(curl -s -o /dev/null -w '%{http_code}' -u "agent:${TERMINAL_PASSWORD}" http://127.0.0.1:7681/)" = 200
           # ゲートウェイ経由でも同じ（Basic 認証はそのまま届く）
-          test "$(gw_code term.localhost:8700 /)" = 401
-          test "$(gw_code term.localhost:8700 / -u "agent:${TERMINAL_PASSWORD}")" = 200
+          test "$(gw_code term.agent-box.localhost:8700 /)" = 401
+          test "$(gw_code term.agent-box.localhost:8700 / -u "agent:${TERMINAL_PASSWORD}")" = 200
           # ビルドに使った Go を記録している（Go かソースが変わったときだけビルドし直すため）
           grep -q "^$(sed -n 's/^GO_SHA256=//p' /src/envs/debian-pc/tools.conf) " /usr/local/lib/agent-env/agent-env-gateway.stamp
 

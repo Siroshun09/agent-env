@@ -80,24 +80,24 @@ func TestRouting(t *testing.T) {
 		wantCode           int
 		wantBody           string
 	}{
-		{"GET", "localhost:8700", "/", 200, "<title>agent-box</title>"},
-		{"GET", "LOCALHOST:8700", "/", 200, "<title>agent-box</title>"},
-		{"GET", "localhost", "/", 200, "<title>agent-box</title>"},
-		{"GET", "localhost:8700", "/other", 404, ""},
-		{"GET", "term.localhost:8700", "/ws?x=1", 200, "term host=term.localhost:8700 path=/ws query=x=1"},
-		{"GET", "llm.localhost:8700", "/v1/models", 200, "llm host=llm.localhost:8700 path=/v1/models"},
-		{"GET", "metrics.localhost:8700", "/vmui/", 200, "metrics host=metrics.localhost:8700 path=/vmui/"},
-		{"GET", "logs.localhost:8700", "/select/vmui/", 200, "logs host=logs.localhost:8700 path=/select/vmui/"},
-		{"GET", "dash.localhost:8700", "/", 200, "<title>監視の概要</title>"},
-		{"GET", "dash.localhost:8700", "/api/v1/query?query=up", 200, "metrics host=dash.localhost:8700 path=/api/v1/query query=query=up"},
-		{"GET", "dash.localhost:8700", "/api/v1/query_range?query=up", 200, "metrics host=dash.localhost:8700 path=/api/v1/query_range"},
+		{"GET", "agent-box.localhost:8700", "/", 200, "<title>agent-box</title>"},
+		{"GET", "AGENT-BOX.LOCALHOST:8700", "/", 200, "<title>agent-box</title>"},
+		{"GET", "agent-box.localhost", "/", 200, "<title>agent-box</title>"},
+		{"GET", "agent-box.localhost:8700", "/other", 404, ""},
+		{"GET", "term.agent-box.localhost:8700", "/ws?x=1", 200, "term host=term.agent-box.localhost:8700 path=/ws query=x=1"},
+		{"GET", "llm.agent-box.localhost:8700", "/v1/models", 200, "llm host=llm.agent-box.localhost:8700 path=/v1/models"},
+		{"GET", "metrics.agent-box.localhost:8700", "/vmui/", 200, "metrics host=metrics.agent-box.localhost:8700 path=/vmui/"},
+		{"GET", "logs.agent-box.localhost:8700", "/select/vmui/", 200, "logs host=logs.agent-box.localhost:8700 path=/select/vmui/"},
+		{"GET", "dash.agent-box.localhost:8700", "/", 200, "<title>監視の概要</title>"},
+		{"GET", "dash.agent-box.localhost:8700", "/api/v1/query?query=up", 200, "metrics host=dash.agent-box.localhost:8700 path=/api/v1/query query=query=up"},
+		{"GET", "dash.agent-box.localhost:8700", "/api/v1/query_range?query=up", 200, "metrics host=dash.agent-box.localhost:8700 path=/api/v1/query_range"},
 		// 概要ページからは、問い合わせ（読み取り）以外の API は使えない
-		{"POST", "dash.localhost:8700", "/api/v1/query", 405, ""},
-		{"GET", "dash.localhost:8700", "/api/v1/admin/tsdb/delete_series", 404, ""},
-		{"GET", "dash.localhost:8700", "/api/v1/import", 404, ""},
+		{"POST", "dash.agent-box.localhost:8700", "/api/v1/query", 405, ""},
+		{"GET", "dash.agent-box.localhost:8700", "/api/v1/admin/tsdb/delete_series", 404, ""},
+		{"GET", "dash.agent-box.localhost:8700", "/api/v1/import", 404, ""},
 		// 知らないホスト名（DNS リバインディング）と IP アドレス
 		{"GET", "evil.example:8700", "/", 421, ""},
-		{"GET", "term.localhost.evil.example:8700", "/", 421, ""},
+		{"GET", "term.agent-box.localhost.evil.example:8700", "/", 421, ""},
 		{"GET", "127.0.0.1:8700", "/", 421, ""},
 		{"GET", "", "/", 421, ""},
 	}
@@ -113,7 +113,7 @@ func TestRouting(t *testing.T) {
 
 func TestHeaders(t *testing.T) {
 	gw := startGateway(t, nil)
-	res, body := get(t, gw, "GET", "term.localhost:8700", "/", map[string]string{
+	res, body := get(t, gw, "GET", "term.agent-box.localhost:8700", "/", map[string]string{
 		"Authorization":   "Basic YWdlbnQ6eA==",
 		"X-Forwarded-For": "192.0.2.1",
 	})
@@ -143,31 +143,31 @@ func TestCrossOrigin(t *testing.T) {
 		header       map[string]string
 		wantCode     int
 	}{
-		{"ブラウザ以外（curl など）", "GET", "metrics.localhost:8700", nil, 200},
-		{"同じオリジンの fetch", "GET", "metrics.localhost:8700",
-			map[string]string{"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "cors", "Origin": "http://metrics.localhost:8700"}, 200},
-		{"同じオリジンからの送信", "POST", "llm.localhost:8700",
-			map[string]string{"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "cors", "Origin": "http://llm.localhost:8700"}, 200},
-		{"アドレスバーから開く", "GET", "term.localhost:8700",
+		{"ブラウザ以外（curl など）", "GET", "metrics.agent-box.localhost:8700", nil, 200},
+		{"同じオリジンの fetch", "GET", "metrics.agent-box.localhost:8700",
+			map[string]string{"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "cors", "Origin": "http://metrics.agent-box.localhost:8700"}, 200},
+		{"同じオリジンからの送信", "POST", "llm.agent-box.localhost:8700",
+			map[string]string{"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "cors", "Origin": "http://llm.agent-box.localhost:8700"}, 200},
+		{"アドレスバーから開く", "GET", "term.agent-box.localhost:8700",
 			map[string]string{"Sec-Fetch-Site": "none", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}, 200},
-		{"一覧のページからのリンク", "GET", "term.localhost:8700",
+		{"一覧のページからのリンク", "GET", "term.agent-box.localhost:8700",
 			map[string]string{"Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}, 200},
-		{"別のサイトからのリンク", "GET", "llm.localhost:8700",
+		{"別のサイトからのリンク", "GET", "llm.agent-box.localhost:8700",
 			map[string]string{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}, 200},
-		{"別のサイトからの fetch", "GET", "metrics.localhost:8700",
+		{"別のサイトからの fetch", "GET", "metrics.agent-box.localhost:8700",
 			map[string]string{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "cors", "Origin": "https://evil.example"}, 403},
-		{"別のサイトからの script 要素", "GET", "metrics.localhost:8700",
+		{"別のサイトからの script 要素", "GET", "metrics.agent-box.localhost:8700",
 			map[string]string{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Dest": "script"}, 403},
-		{"別のサイトの iframe", "GET", "term.localhost:8700",
+		{"別のサイトの iframe", "GET", "term.agent-box.localhost:8700",
 			map[string]string{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "iframe"}, 403},
-		{"ほかの画面（同じサイト）からの fetch", "GET", "term.localhost:8700",
-			map[string]string{"Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "cors", "Origin": "http://llm.localhost:8700"}, 403},
-		{"別のサイトからのフォームの送信", "POST", "llm.localhost:8700",
+		{"ほかの画面（同じサイト）からの fetch", "GET", "term.agent-box.localhost:8700",
+			map[string]string{"Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "cors", "Origin": "http://llm.agent-box.localhost:8700"}, 403},
+		{"別のサイトからのフォームの送信", "POST", "llm.agent-box.localhost:8700",
 			map[string]string{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document", "Origin": "https://evil.example"}, 403},
-		{"Sec-Fetch-* を送らないブラウザの、別のオリジンからの送信", "POST", "llm.localhost:8700",
+		{"Sec-Fetch-* を送らないブラウザの、別のオリジンからの送信", "POST", "llm.agent-box.localhost:8700",
 			map[string]string{"Origin": "https://evil.example"}, 403},
-		{"Origin が null", "POST", "llm.localhost:8700", map[string]string{"Origin": "null"}, 403},
-		{"Origin のポートが違う", "POST", "llm.localhost:8700", map[string]string{"Origin": "http://llm.localhost:9999"}, 403},
+		{"Origin が null", "POST", "llm.agent-box.localhost:8700", map[string]string{"Origin": "null"}, 403},
+		{"Origin のポートが違う", "POST", "llm.agent-box.localhost:8700", map[string]string{"Origin": "http://llm.agent-box.localhost:9999"}, 403},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -187,7 +187,7 @@ func TestUpstreamDown(t *testing.T) {
 	l.Close()
 
 	gw := startGateway(t, down)
-	if res, _ := get(t, gw, "GET", "llm.localhost", "/", nil); res.StatusCode != http.StatusBadGateway {
+	if res, _ := get(t, gw, "GET", "llm.agent-box.localhost", "/", nil); res.StatusCode != http.StatusBadGateway {
 		t.Errorf("got %d, want 502", res.StatusCode)
 	}
 }
@@ -208,7 +208,7 @@ func TestStreaming(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Host = "llm.localhost:8700"
+	req.Host = "llm.agent-box.localhost:8700"
 	res, err := gw.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -233,7 +233,7 @@ func TestStreaming(t *testing.T) {
 // 端末（WebSocket）の接続を中継できる。上流には元の Host と Origin が届く
 func TestWebSocket(t *testing.T) {
 	up := startUpstream(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Upgrade") != "websocket" || r.Host != "term.localhost:8700" || r.Header.Get("Origin") != "http://term.localhost:8700" {
+		if r.Header.Get("Upgrade") != "websocket" || r.Host != "term.agent-box.localhost:8700" || r.Header.Get("Origin") != "http://term.agent-box.localhost:8700" {
 			http.Error(w, "bad upgrade", http.StatusBadRequest)
 			return
 		}
@@ -260,7 +260,7 @@ func TestWebSocket(t *testing.T) {
 		}
 		t.Cleanup(func() { conn.Close() })
 		conn.SetDeadline(time.Now().Add(5 * time.Second))
-		fmt.Fprintf(conn, "GET /ws HTTP/1.1\r\nHost: term.localhost:8700\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"+
+		fmt.Fprintf(conn, "GET /ws HTTP/1.1\r\nHost: term.agent-box.localhost:8700\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"+
 			"Origin: %s\r\nSec-Fetch-Site: %s\r\nSec-Fetch-Mode: websocket\r\n\r\n", origin, site)
 		rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
 		res, err := http.ReadResponse(rw.Reader, nil)
@@ -271,7 +271,7 @@ func TestWebSocket(t *testing.T) {
 	}
 
 	t.Run("同じオリジン", func(t *testing.T) {
-		res, rw := upgrade("http://term.localhost:8700", "same-origin")
+		res, rw := upgrade("http://term.agent-box.localhost:8700", "same-origin")
 		if res.StatusCode != http.StatusSwitchingProtocols {
 			t.Fatalf("got %d", res.StatusCode)
 		}

@@ -10,6 +10,10 @@ import (
 	"strings"
 )
 
+// domain は一覧のページのホスト名。各画面は <名前>.agent-box.localhost で開く。
+// *.localhost はブラウザが 127.0.0.1 に解決するので、Mac の DNS の設定は要らない
+const domain = "agent-box.localhost"
+
 //go:embed web
 var web embed.FS
 
@@ -32,12 +36,12 @@ func newHandler(up upstreams) http.Handler {
 	dash.Handle("GET /api/v1/query_range", metrics)
 
 	return guard(map[string]http.Handler{
-		"localhost":         index,
-		"dash.localhost":    dash,
-		"term.localhost":    newProxy(up.term),
-		"llm.localhost":     newProxy(up.llm),
-		"metrics.localhost": metrics,
-		"logs.localhost":    newProxy(up.logs),
+		domain:              index,
+		"dash." + domain:    dash,
+		"term." + domain:    newProxy(up.term),
+		"llm." + domain:     newProxy(up.llm),
+		"metrics." + domain: metrics,
+		"logs." + domain:    newProxy(up.logs),
 	})
 }
 
@@ -74,12 +78,12 @@ func hostname(host string) string {
 // ブラウザ以外（curl など）は Sec-Fetch-* も Origin も送らないので通す
 func allowed(r *http.Request) bool {
 	if isNavigation(r) {
-		// 一覧のページ（localhost）から各画面へのリンクなど。表示するだけで何も変えない
+		// 一覧のページから各画面へのリンクなど。表示するだけで何も変えない
 		return true
 	}
 	switch r.Header.Get("Sec-Fetch-Site") {
 	case "", "same-origin", "none":
-	default: // same-site（ほかの *.localhost）、cross-site
+	default: // same-site（ほかの画面）、cross-site
 		return false
 	}
 	origin := r.Header.Get("Origin")

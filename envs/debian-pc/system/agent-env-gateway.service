@@ -1,5 +1,5 @@
 # Mac のブラウザから PC 内の画面を開くための入口（gateway/）。PC 内（127.0.0.1:8700）だけで待ち受け、
-# Mac からは SSH で転送する。ホスト名（term.localhost など）で各サービスに振り分ける。
+# Mac からは SSH で転送する。ホスト名（term.agent-box.localhost など）で各サービスに振り分ける。
 # 状況確認: journalctl -u agent-env-gateway
 [Unit]
 Description=Gateway for the browser (agent-env)
