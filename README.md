@@ -69,7 +69,7 @@ ssh -t agent-box sudo -iu agent
 
 `agent` ユーザーで次を実行します。
 - Claude Code: `cd ~/work && claude` を起動してログインします。表示された URL を Mac のブラウザで開いて認証します。続けて表示される `~/work` を信頼するかの確認で、信頼を選びます。
-- OpenCode: `opencode` を起動し（ブラウザの Web UI からでも可）、`/connect` で OpenAI を選んで ChatGPT のプランでサインインします。管理者用の設定で、OpenAI とローカル LLM 以外のモデル提供元は使えないようにしています。
+- OpenCode: `opencode` を起動し、`/connect` で OpenAI を選んで ChatGPT のプランでサインインします。管理者用の設定で、OpenAI とローカル LLM 以外のモデル提供元は使えないようにしています。
 - Codex: `codex login --device-auth` で ChatGPT のプランでサインインします（ブラウザの無い PC なので、表示されたコードを Mac のブラウザで入力します）。サンドボックスは管理者用の設定の権限プロファイル `agent-env`（既定）で、作業中のリポジトリに加えてビルドツールのキャッシュ（`~/.gradle`、`~/.m2`、`~/go`、`~/.cache` など）への書き込みと、外向きの通信を許可しています。
 - GitHub: [fine-grained personal access token](https://github.com/settings/personal-access-tokens) を、リポジトリの持ち主（個人と各 org）ごとに 1 枚ずつ発行し、`agent-env-github-token set <持ち主>` で保存します（トークンを貼り付け、Enter と Ctrl+D）。fine-grained PAT は 1 枚で 1 つの持ち主のリポジトリにしか使えないためです。
   - トークンは対象のリポジトリに限定し、権限は Contents と Pull requests の Read and write だけにして、有効期限を付けてください。org のトークンは、org の設定で fine-grained PAT が許可されている必要があります（管理者の承認が必要な場合もあります）。`main` へのマージはブランチ保護で防ぎます。
@@ -92,8 +92,6 @@ PC は `agent-box.local` という名前で LAN 内に公開されます。`~/.s
 Host agent-box
   HostName agent-box.local
   User owner
-  # OpenCode の Web UI（PC 内の 127.0.0.1:4096）を Mac の localhost:4096 に転送する
-  LocalForward 4096 127.0.0.1:4096
   # ブラウザの端末（PC 内の 127.0.0.1:7681）を Mac の localhost:7681 に転送する
   LocalForward 7681 127.0.0.1:7681
   # ローカル LLM のチャット画面（llama-server。NVIDIA の GPU がある場合だけ）
@@ -106,12 +104,11 @@ PC が起動すると、次のサービスが起動します。「エージェ�
 
 | | 使い方 | 仕組み |
 |---|---|---|
-| ブラウザの端末（Claude Code、Codex など） | `ssh -N agent-box` を実行したまま、ブラウザで http://localhost:7681 を開きます。ユーザー名は `agent`、パスワードは `ssh agent-box sudo cat /etc/agent-env/terminal.env` で確認します。`claude` や `codex` をそのまま起動できます | ttyd と tmux（`agent-env-terminal.service`）。ブラウザを閉じても作業は続き、開き直すと同じ画面に戻ります。PC 内（127.0.0.1）だけで待ち受け、SSH で転送します |
-| OpenCode | `ssh -N agent-box` を実行したまま、ブラウザで http://localhost:4096 を開きます。ユーザー名は `opencode`、パスワードは `ssh agent-box sudo cat /etc/agent-env/opencode-server.env` で確認します | `opencode serve`（`agent-env-opencode.service`）。PC 内（127.0.0.1）だけで待ち受け、SSH で転送します |
+| ブラウザの端末（Claude Code、Codex、OpenCode など） | `ssh -N agent-box` を実行したまま、ブラウザで http://localhost:7681 を開きます。ユーザー名は `agent`、パスワードは `ssh agent-box sudo cat /etc/agent-env/terminal.env` で確認します。`claude`、`codex`、`opencode` をそのまま起動できます | ttyd と tmux（`agent-env-terminal.service`）。ブラウザを閉じても作業は続き、開き直すと同じ画面に戻ります。PC 内（127.0.0.1）だけで待ち受け、SSH で転送します |
 
 どのセッションも `agent` ユーザーの `~/work` で始まります。ブラウザの端末の tmux と bash は、[dotfiles](https://github.com/Siroshun09/dotfiles) の `.tmux.conf` と `.bashrc` を使います（bootstrap が `~/dotfiles` に clone して最新にし、シンボリックリンクを張ります。動作中の tmux には `tmux source ~/.tmux.conf` で反映します）。リポジトリの clone や worktree の作成はエージェントに任せます。
 
-サービスの状態は `journalctl -u agent-env-opencode`、`journalctl -u agent-env-terminal` で確認できます。bootstrap は動作中のサービスを再起動しないので、ユニットの変更は PC の再起動か `sudo systemctl restart <ユニット名>` で反映してください。
+サービスの状態は `journalctl -u agent-env-terminal` で確認できます。bootstrap は動作中のサービスを再起動しないので、ユニットの変更は PC の再起動か `sudo systemctl restart <ユニット名>` で反映してください。
 
 ## ローカル LLM
 NVIDIA の GPU がある PC では、llama.cpp の `llama-server` がサービス（`agent-env-llama.service`、`llama` ユーザー）として動きます。PC 内（127.0.0.1:8080）だけで待ち受け、OpenAI 互換の API（`/v1`）とチャット画面を提供します。
