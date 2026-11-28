@@ -1,0 +1,292 @@
+<!doctype html>
+<!--
+  監視の概要ページ。Mac のブラウザでこのファイルを開く（PC には置かない）。
+  データは、ssh -N agent-box で転送している http://localhost:8428（VictoriaMetrics）から、ブラウザが直接取得する。
+  別の場所の VictoriaMetrics を見るときは ?vm=http://localhost:18428 のように指定する。
+  パネルは下の id="panels" の JSON で定義する（CI がこの JSON の問い合わせを検査する）。
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>監視の概要</title>
+<!-- renovate: datasource=npm depName=uplot（版を変えたら integrity も変える。CI が正しい値を表示する） -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css" integrity="sha384-IfV0B7MIOYuO95kO9G5ySKPz/85zqFNOAs8iy4tkK5zd9izhJAB8b7lHrwYqqmYE" crossorigin="anonymous">
+<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js" integrity="sha384-Gx3t0zdBAuQOuvvmaLZj7HKEiSgWTAs+VdtNY7wt19QDPTDQjFIwAuXDj0zeN00c" crossorigin="anonymous"></script>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #fff; --text: #1d2330; --muted: #667085; --border: #e3e6eb; --grid: #eceef2;
+  --ok: #16a34a; --ng: #dc2626; --accent: #2563eb;
+  --s1: #2563eb; --s2: #e11d48; --s3: #16a34a; --s4: #d97706; --s5: #7c3aed; --s6: #0891b2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1115; --panel: #171a21; --text: #e6e8ec; --muted: #98a2b3; --border: #2a2f3a; --grid: #232833;
+    --ok: #22c55e; --ng: #f87171; --accent: #60a5fa;
+    --s1: #60a5fa; --s2: #fb7185; --s3: #4ade80; --s4: #fbbf24; --s5: #a78bfa; --s6: #22d3ee;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, -apple-system, "Hiragino Sans", sans-serif; }
+header { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+  padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
+h1 { font-size: 15px; margin: 0; }
+.ranges button { font: inherit; color: var(--text); background: none; border: 1px solid var(--border); padding: 2px 10px; cursor: pointer; }
+.ranges button:first-child { border-radius: 6px 0 0 6px; }
+.ranges button:last-child { border-radius: 0 6px 6px 0; }
+.ranges button + button { border-left: none; }
+.ranges button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+#targets { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); }
+.chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ng); }
+.chip.ok::before { background: var(--ok); }
+#status { margin-left: auto; color: var(--muted); }
+#status.error { color: var(--ng); }
+main { padding: 12px 16px 24px; }
+h2 { font-size: 13px; color: var(--muted); margin: 14px 0 6px; font-weight: 600; }
+h2:first-child { margin-top: 0; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px 4px; min-width: 0; }
+.panel-head { display: flex; align-items: baseline; gap: 8px; }
+.panel h3 { font-size: 13px; margin: 0; }
+.panel .unit, .panel .desc { color: var(--muted); font-size: 12px; }
+.panel .desc { margin-left: auto; }
+.chart { position: relative; min-height: 175px; }
+.empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+.uplot { font-family: inherit; }
+.u-legend { font-size: 12px; color: var(--text); text-align: left; }
+.u-legend .u-marker { width: 10px; height: 3px; }
+.u-legend th { font-weight: normal; }
+.u-legend td { padding: 0 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>監視の概要</h1>
+  <div class="ranges" role="group" aria-label="表示期間"></div>
+  <div id="targets"></div>
+  <div id="status">読み込み中…</div>
+</header>
+<main id="main"></main>
+
+<script type="application/json" id="panels">
+[
+  {"section": "マシン", "panels": [
+    {"title": "CPU 使用率", "unit": "%", "series": [
+      {"name": "使用率", "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"})))"},
+      {"name": "I/O 待ち", "expr": "100 * avg(rate(node_cpu_seconds_total{mode=\"iowait\"}))"}]},
+    {"title": "メモリ", "unit": "GiB", "series": [
+      {"name": "使用中", "expr": "(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / 2^30"},
+      {"name": "キャッシュ", "expr": "(node_memory_Cached_bytes + node_memory_Buffers_bytes) / 2^30"},
+      {"name": "スワップ", "expr": "(node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes) / 2^30"}]},
+    {"title": "ディスク使用率", "unit": "%", "series": [
+      {"name": "{{mountpoint}}", "expr": "100 * (1 - node_filesystem_avail_bytes{mountpoint=~\"/|/home\"} / node_filesystem_size_bytes{mountpoint=~\"/|/home\"})"}]},
+    {"title": "ディスク I/O", "unit": "MiB/s", "series": [
+      {"name": "読み込み", "expr": "sum(rate(node_disk_read_bytes_total{device!~\"loop.*|ram.*|zram.*\"})) / 2^20"},
+      {"name": "書き込み", "expr": "sum(rate(node_disk_written_bytes_total{device!~\"loop.*|ram.*|zram.*\"})) / 2^20"}]}
+  ]},
+  {"section": "GPU", "panels": [
+    {"title": "GPU 使用率", "unit": "%", "series": [
+      {"name": "演算", "expr": "gpu_utilization_percent"},
+      {"name": "メモリ帯域", "expr": "gpu_memory_bandwidth_utilization_percent"}]},
+    {"title": "VRAM", "unit": "GiB", "series": [
+      {"name": "使用中", "expr": "gpu_memory_used_bytes / 2^30"},
+      {"name": "合計", "expr": "gpu_memory_total_bytes / 2^30"}]},
+    {"title": "消費電力", "unit": "W", "series": [
+      {"name": "電力", "expr": "gpu_power_watts"}]},
+    {"title": "温度", "unit": "°C", "series": [
+      {"name": "温度", "expr": "gpu_temperature_celsius"}]}
+  ]},
+  {"section": "ローカル LLM（llama-server）", "panels": [
+    {"title": "処理速度", "unit": "トークン/秒", "series": [
+      {"name": "生成 {{model}}", "expr": "rate(llamacpp:tokens_predicted_total)"},
+      {"name": "プロンプト {{model}}", "expr": "rate(llamacpp:prompt_tokens_total)"}]},
+    {"title": "リクエスト", "unit": "件", "series": [
+      {"name": "処理中 {{model}}", "expr": "llamacpp:requests_processing"},
+      {"name": "待ち {{model}}", "expr": "llamacpp:requests_deferred"}]}
+  ]},
+  {"section": "エージェント", "panels": [
+    {"title": "Claude Code のトークン", "unit": "トークン/分", "series": [
+      {"name": "{{type}}", "expr": "sum by (type) (rate({__name__=~\"claude_code_token_usage.*\"})) * 60"}]},
+    {"title": "Claude Code の費用（目安）", "unit": "USD/時", "desc": "サブスクリプションでは請求額ではない", "series": [
+      {"name": "{{model}}", "expr": "sum by (model) (rate({__name__=~\"claude_code_cost_usage.*\"})) * 3600"}]},
+    {"title": "Codex のリクエスト", "unit": "回/分", "series": [
+      {"name": "{{model}}", "expr": "sum by (model) (rate(codex_api_request_total)) * 60"}]}
+  ]}
+]
+</script>
+
+<script>
+"use strict";
+const VM = (new URLSearchParams(location.search).get("vm") || "http://localhost:8428").replace(/\/$/, "");
+const RANGES = [["1 時間", 3600], ["6 時間", 6 * 3600], ["24 時間", 86400], ["7 日", 7 * 86400], ["30 日", 30 * 86400]];
+const REFRESH_MS = 30000;
+const SECTIONS = JSON.parse(document.getElementById("panels").textContent);
+const panels = [];
+
+let range = RANGES[0][1];
+try { range = Number(localStorage.getItem("range")) || range; } catch (e) { /* 保存できなくても動く */ }
+
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const fmt = (v) => v == null || Number.isNaN(v) ? "-" :
+  Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(1) : Math.abs(v) >= 1 ? v.toFixed(2) : v.toPrecision(2);
+const pad = (n) => String(n).padStart(2, "0");
+const fmtTime = (t, withDate) => {
+  const d = new Date(t * 1000);
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return withDate ? `${d.getMonth() + 1}/${d.getDate()} ${hm}` : hm;
+};
+// カーソルがグラフの外にあるときは、凡例に最新の値を出す
+const latest = (arr) => { for (let i = arr.length - 1; i >= 0; i--) if (arr[i] != null) return arr[i]; return null; };
+const label = (tmpl, metric) => tmpl.replace(/\{\{(\w+)\}\}/g, (_, k) => metric[k] ?? "").trim() || JSON.stringify(metric);
+
+async function vm(path, params, signal) {
+  const res = await fetch(`${VM}${path}?${new URLSearchParams(params)}`, { signal });
+  const body = await res.json();
+  if (body.status !== "success") throw new Error(body.error || res.statusText);
+  return body.data.result;
+}
+
+function buildRanges() {
+  const box = document.querySelector(".ranges");
+  for (const [name, sec] of RANGES) {
+    const b = document.createElement("button");
+    b.textContent = name;
+    b.setAttribute("aria-pressed", String(sec === range));
+    b.onclick = () => {
+      range = sec;
+      try { localStorage.setItem("range", String(sec)); } catch (e) { /* 無視 */ }
+      box.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      refresh();
+    };
+    box.append(b);
+  }
+}
+
+function buildPanels() {
+  const main = document.getElementById("main");
+  for (const sec of SECTIONS) {
+    const h = document.createElement("h2");
+    h.textContent = sec.section;
+    const grid = document.createElement("div");
+    grid.className = "grid";
+    main.append(h, grid);
+    for (const def of sec.panels) {
+      const el = document.createElement("section");
+      el.className = "panel";
+      el.innerHTML = '<div class="panel-head"><h3></h3><span class="unit"></span><span class="desc"></span></div><div class="chart"></div>';
+      el.querySelector("h3").textContent = def.title;
+      el.querySelector(".unit").textContent = def.unit || "";
+      el.querySelector(".desc").textContent = def.desc || "";
+      grid.append(el);
+      const p = { def, chart: el.querySelector(".chart"), plot: null, labels: "" };
+      new ResizeObserver(() => p.plot && p.plot.setSize({ width: p.chart.clientWidth, height: 150 })).observe(p.chart);
+      panels.push(p);
+    }
+  }
+}
+
+function draw(p, xs, series) {
+  const key = series.map((s) => s.name).join("\n");
+  const data = [xs, ...series.map((s) => s.vals)];
+  let empty = p.chart.querySelector(".empty");
+  if (!series.length) {
+    if (p.plot) { p.plot.destroy(); p.plot = null; p.labels = ""; }
+    if (!empty) {
+      empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "データなし";
+      p.chart.append(empty);
+    }
+    return;
+  }
+  if (empty) empty.remove();
+  if (p.plot && p.labels === key) { p.plot.setData(data); return; }
+  if (p.plot) p.plot.destroy();
+  const colors = [1, 2, 3, 4, 5, 6].map((i) => css(`--s${i}`));
+  const axis = { stroke: css("--muted"), grid: { stroke: css("--grid"), width: 1 }, ticks: { stroke: css("--grid"), width: 1 } };
+  p.plot = new uPlot({
+    width: p.chart.clientWidth,
+    height: 150,
+    cursor: { drag: { x: false, y: false } },
+    scales: { y: { range: (u, min, max) => [Math.min(0, min), max > 0 ? max * 1.1 : 1] } },
+    axes: [
+      { ...axis, size: 28, values: (u, vals) => vals.map((t) => fmtTime(t, range > 86400)) },
+      { ...axis, size: 48, values: (u, vals) => vals.map(fmt) },
+    ],
+    series: [
+      { label: "時刻", value: (u, t) => t == null ? "最新" : fmtTime(t, true) },
+      ...series.map((s, i) => ({
+        label: s.name, stroke: colors[i % colors.length], width: 1.5, spanGaps: false,
+        value: (u, v, si, idx) => fmt(idx == null ? latest(u.data[si]) : v),
+      })),
+    ],
+  }, data, p.chart);
+  p.labels = key;
+}
+
+let controller = null;
+async function refresh() {
+  if (controller) controller.abort();
+  controller = new AbortController();
+  const { signal } = controller;
+  const status = document.getElementById("status");
+  const step = Math.max(30, Math.ceil(range / 300 / 30) * 30);
+  const end = Math.floor(Date.now() / 1000 / step) * step;
+  const start = end - range;
+  const xs = [];
+  for (let t = start; t <= end; t += step) xs.push(t);
+  const index = new Map(xs.map((t, i) => [t, i]));
+  let errors = 0;
+  await Promise.all([
+    vm("/api/v1/query", { query: "up" }, signal).then((res) => {
+      const box = document.getElementById("targets");
+      box.replaceChildren(...res
+        .sort((a, b) => `${a.metric.job}${a.metric.model}`.localeCompare(`${b.metric.job}${b.metric.model}`))
+        .map((r) => {
+          const c = document.createElement("span");
+          c.className = r.value[1] === "1" ? "chip ok" : "chip";
+          c.textContent = r.metric.model || r.metric.job;
+          c.title = r.value[1] === "1" ? "取得できている" : "取得できない（llama のモデルは、読み込まれていないときもこうなる）";
+          return c;
+        }));
+    }).catch(() => { errors++; }),
+    ...panels.map(async (p) => {
+      try {
+        const results = await Promise.all(p.def.series.map((s) =>
+          vm("/api/v1/query_range", { query: s.expr, start, end, step }, signal).then((res) => res.map((r) => {
+            const vals = new Array(xs.length).fill(null);
+            for (const [t, v] of r.values) {
+              const i = index.get(Math.round(t));
+              if (i !== undefined) vals[i] = Number(v);
+            }
+            return { name: label(s.name, r.metric), vals };
+          }))));
+        draw(p, xs, results.flat());
+      } catch (e) {
+        if (e.name !== "AbortError") errors++;
+      }
+    }),
+  ]);
+  if (signal.aborted) return;
+  const now = new Date().toLocaleTimeString("ja-JP");
+  status.className = errors ? "error" : "";
+  status.textContent = errors
+    ? `${now} 取得に失敗（${errors} 件）。ssh -N agent-box を実行しているか確認してください（${VM}）`
+    : `${now} 更新（30 秒ごと）`;
+}
+
+if (typeof uPlot === "undefined") {
+  document.getElementById("status").textContent = "グラフのライブラリ（uPlot）を読み込めませんでした";
+  document.getElementById("status").className = "error";
+} else {
+  buildRanges();
+  buildPanels();
+  refresh();
+  setInterval(() => { if (!document.hidden) refresh(); }, REFRESH_MS);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+}
+</script>
+</body>
+</html>

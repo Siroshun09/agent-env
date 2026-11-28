@@ -44,6 +44,17 @@
       ],
       versioningTemplate: 'semver',
     },
+    {
+      description: 'dashboard.html が jsDelivr から読み込む uPlot（integrity は更新できないので、CI が表示する値で直す）',
+      customType: 'regex',
+      managerFilePatterns: [
+        '/^envs/debian-pc/dashboard\\.html$/',
+      ],
+      matchStrings: [
+        'cdn\\.jsdelivr\\.net/npm/(?<depName>uplot)@(?<currentValue>[0-9][0-9.]*)/',
+      ],
+      datasourceTemplate: 'npm',
+    },
   ],
   customDatasources: {
     'debian-netinst': {

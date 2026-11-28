@@ -1,6 +1,6 @@
 # 指標の保存と、指標を見る画面（vmui）。PC 内（127.0.0.1:8428）だけで待ち受ける。
 # Claude Code と Codex からは OpenTelemetry で受け取り、node_exporter・llama-server・VictoriaLogs からは取りに行く（scrape.yml）。
-# 画面: Mac で ssh -N agent-box を実行したまま http://localhost:8428/vmui（主要な指標は Dashboards タブ。README の「監視」）
+# 画面: Mac で ssh -N agent-box を実行したまま http://localhost:8428/vmui（主要な指標は envs/debian-pc/dashboard.html。README の「監視」）
 # 状況確認: journalctl -u agent-env-victoriametrics
 [Unit]
 Description=VictoriaMetrics (metrics storage)
@@ -12,8 +12,7 @@ StateDirectory=agent-env-victoriametrics
 # 削除などの管理用 API の鍵（bootstrap.sh が生成する。root しか読めない）。画面と問い合わせには不要
 LoadCredential=admin-key:/etc/agent-env/monitoring-admin.key
 # 指標は 90 日保存する。ディスクの空きが 5GiB を下回ったら書き込みを止める。
-# OpenTelemetry の指標の名前は Prometheus の形式（codex_api_request_total など）に変える。
-# vmui の Dashboards タブには dashboards/ の JSON を出す（画面を開くたびに読み直すので、変えても再起動は不要）
+# OpenTelemetry の指標の名前は Prometheus の形式（codex_api_request_total など）に変える
 ExecStart=/usr/local/bin/victoria-metrics \
   -httpListenAddr=127.0.0.1:8428 \
   -storageDataPath=%S/agent-env-victoriametrics \
@@ -22,7 +21,6 @@ ExecStart=/usr/local/bin/victoria-metrics \
   -promscrape.config=/etc/agent-env/monitoring/scrape.yml \
   -selfScrapeInterval=30s \
   -opentelemetry.usePrometheusNaming \
-  -vmui.customDashboardsPath=/etc/agent-env/monitoring/dashboards \
   -configAuthKey=file://%d/admin-key \
   -deleteAuthKey=file://%d/admin-key \
   -flagsAuthKey=file://%d/admin-key \

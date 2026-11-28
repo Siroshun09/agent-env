@@ -45,6 +45,19 @@ jobs:
           sed "s|/opt/agent-env|${GITHUB_WORKSPACE}|g" system/agent-env-firstboot.service > "${dir}/agent-env-firstboot.service"
           out="$(systemd-analyze verify "${dir}"/* 2>&1)"
           if [ -n "${out}" ]; then echo "${out}"; exit 1; fi
+      - name: dashboard.html の外部ファイル
+        run: |
+          # 外部から読み込むファイルはすべて integrity（SRI）付きで、値が正しいこと。
+          # Renovate は版だけを更新するので、違えば正しい値を表示する（それで dashboard.html を直す）
+          test "$(grep -cE '(src|href)="https?://' dashboard.html)" -eq 2
+          grep -oE '(src|href)="https://cdn\.jsdelivr\.net/[^"]+" integrity="sha384-[^"]+"' dashboard.html > /tmp/sri
+          test "$(wc -l < /tmp/sri)" -eq 2
+          while read -r ref integrity; do
+            url="${ref#*=\"}"; url="${url%\"}"
+            want="${integrity#integrity=\"}"; want="${want%\"}"
+            got="sha384-$(curl -fsSL "${url}" | openssl dgst -sha384 -binary | base64 -w0)"
+            if [ "${got}" != "${want}" ]; then echo "${url}: integrity=\"${got}\""; exit 1; fi
+          done < /tmp/sri
 
   bootstrap:
     # Debian 13 コンテナで bootstrap を2回実行し、冪等に成功することを確認する。
@@ -263,11 +276,10 @@ jobs:
           vm_query() { local r; r="$(curl -s http://127.0.0.1:8428/api/v1/query --data-urlencode "query=$1")"; grep -qF -- "$2" <<< "${r}"; }
           for _ in $(seq 60); do vm_query 'up{job="node"} == 1' '"job":"node"' && break; sleep 1; done
           vm_query 'up{job="node"} == 1' '"job":"node"'
-          # vmui の Dashboards タブ: 定義が読まれ、どの問い合わせも文法が正しいこと
-          dash="$(curl -sf http://127.0.0.1:8428/vmui/custom-dashboards)"
-          test "$(jq -r '.dashboardsSettings[].title' <<< "${dash}")" = 概要
-          jq -r '.dashboardsSettings[].rows[].panels[].expr[]' <<< "${dash}" > /tmp/dash-exprs
-          test -s /tmp/dash-exprs
+          # 概要ページ（dashboard.html）: どの問い合わせも文法が正しいこと
+          python3 -c 'import json, re, sys; html = open(sys.argv[1]).read(); m = re.search(r"<script type=\"application/json\" id=\"panels\">(.*?)</script>", html, re.S); print("\n".join(s["expr"] for sec in json.loads(m.group(1)) for p in sec["panels"] for s in p["series"]))' \
+            /src/envs/debian-pc/dashboard.html > /tmp/dash-exprs
+          test "$(wc -l < /tmp/dash-exprs)" -ge 10
           while IFS= read -r q; do
             r="$(curl -s http://127.0.0.1:8428/api/v1/query_range --data-urlencode "query=${q}" -d start=-1h -d step=30s)"
             jq -e '.status == "success"' <<< "${r}" > /dev/null || { echo "${q}: ${r}"; exit 1; }
