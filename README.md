@@ -84,6 +84,8 @@ ssh -t agent-box sudo -iu agent
 
 エージェントのツールの管理者用の設定（`envs/debian-pc/system/claude-code/`、`envs/debian-pc/system/opencode/`、`envs/debian-pc/system/codex/`）は、bootstrap が `/etc/claude-code/`、`/etc/opencode/`、`/etc/codex/` に配置します。`agent` ユーザーの設定では上書きできません。
 
+提供元への利用状況などの送信は、機能に影響しない範囲で止めています。Claude Code はエラー報告・フィードバック・満足度調査、Codex は利用状況の分析（analytics）とフィードバックのアップロードです。Claude Code の利用状況の送信（`DISABLE_TELEMETRY`）は、止めると機能フラグも取得されなくなり Remote Control が使えなくなるので、止めていません。
+
 ## Mac からの接続
 PC は `agent-box.local` という名前で LAN 内に公開されます。`~/.ssh/config` に次を追加すると、`ssh agent-box` で接続できます。
 ```
