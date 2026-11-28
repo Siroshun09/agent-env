@@ -112,6 +112,7 @@ jobs:
 
           # エージェントのツール
           claude --version && mise --version && gh --version && tailscale version
+          grep -qx 'Environment=TS_NO_LOGS_NO_SUPPORT=true' /etc/systemd/system/tailscaled.service.d/agent-env.conf
           test -f /etc/claude-code/managed-settings.json
           # agent ユーザーの dotfiles。tmux が設定をエラー無く読め、.tmux.conf の端末の種類（tmux-256color）が使えること
           su - agent -c 'test "$(readlink ~/.tmux.conf)" = dotfiles/.tmux.conf && test "$(readlink ~/.bashrc)" = dotfiles/.bashrc'

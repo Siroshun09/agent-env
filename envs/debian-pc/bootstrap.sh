@@ -375,6 +375,17 @@ if [[ -d /run/systemd/system ]]; then
   fi
 fi
 
+log "Tailscale（外出先からの接続。ログインと接続は管理者が手動で行う）"
+# 診断ログの送信を止める。設定が変わったら tailscaled を再起動する（接続・切断の状態は保たれる）
+dropin=/etc/systemd/system/tailscaled.service.d/agent-env.conf
+if ! cmp -s "${ENV_DIR}/system/tailscale/tailscaled-agent-env.conf" "${dropin}"; then
+  install -D -m 0644 "${ENV_DIR}/system/tailscale/tailscaled-agent-env.conf" "${dropin}"
+  if [[ -d /run/systemd/system ]]; then
+    systemctl daemon-reload
+    systemctl try-restart tailscaled.service
+  fi
+fi
+
 log "Debian の自動セキュリティ更新"
 # OS のパッチは unattended-upgrades で自動適用する。このリポジトリの変更は自動では反映しない（apply.sh で手動）
 install -m 0644 "${ENV_DIR}/system/apt/52agent-env-unattended-upgrades" /etc/apt/apt.conf.d/
