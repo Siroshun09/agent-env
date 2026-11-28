@@ -2,7 +2,7 @@
 # Debian 13 (trixie) の実 PC をエージェント専用ホストに仕立てる。冪等なので何度実行してもよい。
 # 初回起動時（agent-env-firstboot.service）と、管理者が手動で反映するとき（apply.sh）に実行される。
 #
-# OS パッケージ・ユーザー・更新設定に加え、エージェントのツール（Claude Code、OpenCode、Codex、mise）と
+# OS パッケージ・ユーザー・更新設定に加え、エージェントのツール（Claude Code、Codex、mise）と
 # その管理者用の設定まで扱う。agent ユーザーのホームに置くのは秘密情報と作業中のリポジトリだけで、ここでは扱わない。
 set -euo pipefail
 
@@ -37,22 +37,12 @@ fi
 # sudo は付与しない。root が必要なもの（apt パッケージやツールの導入）はこのリポジトリに書く。
 # rootless podman 用の subuid/subgid は、uidmap が入っているので useradd が割り当てる。
 
-log "OpenCode"
 # shellcheck disable=SC1091 # 変数を定義するだけのファイル
 source "${ENV_DIR}/tools.conf"
-if [[ "$(/usr/local/bin/opencode --version 2>/dev/null || true)" != "opencode v${OPENCODE_VERSION}" ]]; then
-  tmp="$(mktemp -d)"
-  tarball="${tmp}/opencode.tgz"
-  curl -fsSL -o "${tarball}" "https://registry.npmjs.org/@opencode/cli-linux-x64/-/cli-linux-x64-${OPENCODE_VERSION}.tgz"
-  actual="sha512-$(openssl dgst -sha512 -binary "${tarball}" | base64 -w0)"
-  if [[ "${actual}" != "${OPENCODE_INTEGRITY}" ]]; then
-    echo "OpenCode の SHA-512 が一致しません: ${actual}" >&2
-    exit 1
-  fi
-  tar -xzf "${tarball}" -C "${tmp}" package/bin/opencode
-  install -m 0755 "${tmp}/package/bin/opencode" /usr/local/bin/opencode
-  rm -rf "${tmp}"
-fi
+
+# OpenCode はやめた（Codex の codex exec で代わりになる）。以前の環境から消す（次回以降は不要）
+rm -f /usr/local/bin/opencode
+rm -rf /etc/opencode
 
 log "ttyd"
 if [[ "$(sha256sum /usr/local/bin/ttyd 2>/dev/null | cut -d' ' -f1)" != "${TTYD_SHA256}" ]]; then
@@ -65,11 +55,9 @@ fi
 
 log "エージェントのツールの管理者用設定"
 # ユーザー・プロジェクトの設定より優先される。root 所有なので agent ユーザーは変更できない
-install -d -m 0755 /etc/claude-code /etc/opencode /etc/codex
+install -d -m 0755 /etc/claude-code /etc/codex
 install -m 0644 "${ENV_DIR}/system/claude-code/managed-settings.json" /etc/claude-code/
-install -m 0644 "${ENV_DIR}/system/opencode/opencode.jsonc" /etc/opencode/
-# エージェントへの指示。Claude Code は管理者用の CLAUDE.md として読み（ユーザーは除外できない）、
-# OpenCode は opencode.jsonc の instructions で読む。毎回のリクエストに含まれるので短くし、
+# エージェントへの指示。Claude Code は管理者用の CLAUDE.md として読む（ユーザーは除外できない）。毎回のリクエストに含まれるので短くし、
 # ローカル LLM の呼び出し方の詳細は、必要なときにエージェントが読む別のファイルにする
 install -m 0644 "${ENV_DIR}/system/agents/instructions.md" /etc/claude-code/CLAUDE.md
 # Codex は管理者用の設定の developer_instructions で読む（TOML のリテラル文字列に入れるので ''' は使えない）
