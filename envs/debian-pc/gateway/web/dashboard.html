@@ -1,8 +1,7 @@
 <!doctype html>
 <!--
-  監視の概要ページ。Mac のブラウザでこのファイルを開く（PC には置かない）。
-  データは、ssh -N agent-box で転送している http://localhost:8428（VictoriaMetrics）から、ブラウザが直接取得する。
-  別の場所の VictoriaMetrics を見るときは ?vm=http://localhost:18428 のように指定する。
+  監視の概要ページ。ゲートウェイ（../main.go）が http://dash.agent-box.localhost で配信し、
+  同じオリジンで中継する VictoriaMetrics の問い合わせ（/api/v1/query、/api/v1/query_range）からデータを取る。
   パネルは下の id="panels" の JSON で定義する（CI がこの JSON の問い合わせを検査する）。
 -->
 <html lang="ja">
@@ -119,7 +118,6 @@ h2:first-child { margin-top: 0; }
 
 <script>
 "use strict";
-const VM = (new URLSearchParams(location.search).get("vm") || "http://localhost:8428").replace(/\/$/, "");
 const RANGES = [["1 時間", 3600], ["6 時間", 6 * 3600], ["24 時間", 86400], ["7 日", 7 * 86400], ["30 日", 30 * 86400]];
 const REFRESH_MS = 30000;
 const SECTIONS = JSON.parse(document.getElementById("panels").textContent);
@@ -142,7 +140,7 @@ const latest = (arr) => { for (let i = arr.length - 1; i >= 0; i--) if (arr[i] !
 const label = (tmpl, metric) => tmpl.replace(/\{\{(\w+)\}\}/g, (_, k) => metric[k] ?? "").trim() || JSON.stringify(metric);
 
 async function vm(path, params, signal) {
-  const res = await fetch(`${VM}${path}?${new URLSearchParams(params)}`, { signal });
+  const res = await fetch(`${path}?${new URLSearchParams(params)}`, { signal });
   const body = await res.json();
   if (body.status !== "success") throw new Error(body.error || res.statusText);
   return body.data.result;
@@ -273,7 +271,7 @@ async function refresh() {
   const now = new Date().toLocaleTimeString("ja-JP");
   status.className = errors ? "error" : "";
   status.textContent = errors
-    ? `${now} 取得に失敗（${errors} 件）。ssh -N agent-box を実行しているか確認してください（${VM}）`
+    ? `${now} 取得に失敗（${errors} 件）。ssh -N agent-box を実行しているか確認してください`
     : `${now} 更新（30 秒ごと）`;
 }
 

@@ -1,0 +1,43 @@
+<!doctype html>
+<!-- ゲートウェイの一覧のページ（http://agent-box.localhost）。各画面は、ホスト名ごとに別のオリジンで開く -->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agent-box</title>
+<style>
+  :root { color-scheme: light dark; --bg: #fff; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --link: #0969da; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --link: #4493f8; }
+  }
+  body { margin: 0; padding: 24px 16px; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 system-ui, -apple-system, "Hiragino Sans", sans-serif; }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 16px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { border-top: 1px solid var(--line); padding: 12px 0; }
+  a { color: var(--link); font-weight: 600; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  span { display: block; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>agent-box</h1>
+  <ul>
+    <li><a data-host="term" data-path="/">ブラウザの端末</a><span>Claude Code、Codex など（ユーザー名は agent）</span></li>
+    <li><a data-host="dash" data-path="/">監視の概要</a><span>マシン、GPU、ローカル LLM、エージェント</span></li>
+    <li><a data-host="llm" data-path="/">ローカル LLM</a><span>llama-server のチャット画面（NVIDIA の GPU がある場合だけ）</span></li>
+    <li><a data-host="metrics" data-path="/vmui/">指標</a><span>VictoriaMetrics の vmui（任意の問い合わせ）</span></li>
+    <li><a data-host="logs" data-path="/select/vmui/">ログ</a><span>VictoriaLogs の vmui（エージェントのイベント）</span></li>
+  </ul>
+</main>
+<script>
+  // 各画面のホスト名は <名前>.<このページのホスト名> で、ポートはこのページと同じ
+  const port = location.port ? `:${location.port}` : "";
+  for (const a of document.querySelectorAll("a[data-host]")) {
+    a.href = `${location.protocol}//${a.dataset.host}.${location.hostname}${port}${a.dataset.path}`;
+  }
+</script>
+</body>
+</html>

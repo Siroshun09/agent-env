@@ -1,0 +1,40 @@
+# Mac のブラウザから PC 内の画面を開くための入口（gateway/）。PC 内（127.0.0.1:8700）だけで待ち受け、
+# Mac からは SSH で転送する。ホスト名（term.agent-box.localhost など）で各サービスに振り分ける。
+# 状況確認: journalctl -u agent-env-gateway
+[Unit]
+Description=Gateway for the browser (agent-env)
+After=network.target
+
+[Service]
+DynamicUser=yes
+ExecStart=/usr/local/bin/agent-env-gateway -listen 127.0.0.1:8700
+Restart=on-failure
+RestartSec=5
+# PC 内の 127.0.0.1 だけと通信する
+IPAddressDeny=any
+IPAddressAllow=localhost
+RestrictAddressFamilies=AF_INET AF_INET6
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

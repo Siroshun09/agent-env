@@ -285,7 +285,7 @@ install_if_changed() { # <ファイル> <置く場所> <権限>
   fi
 }
 install_if_changed "${ENV_DIR}/system/monitoring/scrape.yml" /etc/agent-env/monitoring/scrape.yml 0644
-# vmui の Dashboards タブはやめた（Mac で開く dashboard.html に移した）。以前の環境から消す（次回以降は不要）
+# vmui の Dashboards タブはやめた（監視の概要は gateway/web/dashboard.html）。以前の環境から消す（次回以降は不要）
 rm -rf /etc/agent-env/monitoring/dashboards
 # node_exporter が読むファイル（GPU の指標）の置き場所。書くのは root（agent-env-gpu-metrics）だけ
 install -d -m 0755 /var/lib/agent-env /var/lib/agent-env/node-exporter
@@ -326,16 +326,51 @@ install -d -m 0755 /etc/agent-env
 if [[ ! -s /etc/agent-env/terminal.env ]]; then
   (umask 077 && printf 'TERMINAL_PASSWORD=%s\n' "$(openssl rand -hex 16)" > /etc/agent-env/terminal.env)
 fi
-UNITS=(agent-env-terminal.service)
+UNITS=(agent-env-terminal.service agent-env-gateway.service)
 for u in "${UNITS[@]}"; do
   install -m 0644 "${ENV_DIR}/system/${u}" /etc/systemd/system/
 done
-systemctl enable agent-env-terminal.service
+systemctl enable "${UNITS[@]}"
+
+# ゲートウェイ（gateway/）を、tools.conf で固定した Go でビルドする。
+# root がビルドするので、agent ユーザーが書き換えられる Go（mise）は使わない。Go かソースが変わったときだけビルドする
+go_root=/usr/local/lib/agent-env/go
+install -d -m 0755 /usr/local/lib/agent-env
+if [[ "$(cat "${go_root}.sha256" 2>/dev/null || true)" != "${GO_SHA256}" ]]; then
+  tmp="$(mktemp -d)"
+  curl -fsSL -o "${tmp}/go.tar.gz" "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
+  echo "${GO_SHA256}  ${tmp}/go.tar.gz" | sha256sum -c --quiet -
+  rm -rf "${go_root}"
+  install -d -m 0755 "${go_root}"
+  tar -xzf "${tmp}/go.tar.gz" -C "${go_root}" --strip-components=1 --no-same-owner
+  echo "${GO_SHA256}" > "${go_root}.sha256"
+  rm -rf "${tmp}"
+fi
+gateway_stamp=/usr/local/lib/agent-env/agent-env-gateway.stamp
+gateway_src="$(cd "${ENV_DIR}/gateway" && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)"
+gateway_changed=false
+if [[ ! -x /usr/local/bin/agent-env-gateway || "$(cat "${gateway_stamp}" 2>/dev/null || true)" != "${GO_SHA256} ${gateway_src}" ]]; then
+  tmp="$(mktemp -d)"
+  # 依存は標準ライブラリだけなので、ネットワークは使わない（GOPROXY=off）
+  env -C "${ENV_DIR}/gateway" GOTOOLCHAIN=local GOPROXY=off CGO_ENABLED=0 GOCACHE="${tmp}/cache" GOPATH="${tmp}/gopath" \
+    "${go_root}/bin/go" build -trimpath -buildvcs=false -o "${tmp}/agent-env-gateway" .
+  install -m 0755 "${tmp}/agent-env-gateway" /usr/local/bin/agent-env-gateway
+  echo "${GO_SHA256} ${gateway_src}" > "${gateway_stamp}"
+  rm -rf "${tmp}"
+  gateway_changed=true
+fi
+
 # systemd が動いている（コンテナでの検査ではない）なら、止まっていれば起動する。
-# 動作中のサービスは再起動しない（作業中のセッションを切らないため）。ユニットの変更は次の再起動で反映される
+# 端末は動作中なら再起動しない（作業中のセッションを切らないため）。ユニットの変更は次の再起動で反映される。
+# ゲートウェイは変わったら再起動する（ブラウザの端末は自動で接続し直し、tmux のセッションはそのまま残る）
 if [[ -d /run/systemd/system ]]; then
   systemctl daemon-reload
   systemctl start --no-block agent-env-terminal.service
+  if [[ "${gateway_changed}" == true ]]; then
+    systemctl restart --no-block agent-env-gateway.service
+  else
+    systemctl start --no-block agent-env-gateway.service
+  fi
 fi
 
 log "Debian の自動セキュリティ更新"

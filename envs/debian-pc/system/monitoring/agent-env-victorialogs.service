@@ -1,6 +1,6 @@
 # ログの保存と、ログを見る画面（vmui）。PC 内（127.0.0.1:9428）だけで待ち受ける。
 # Claude Code と Codex のイベント（API の呼び出し、ツールの実行など）を OpenTelemetry で受け取る。プロンプトと応答の本文は含まない。
-# 画面: Mac で ssh -N agent-box を実行したまま http://localhost:9428/select/vmui
+# 画面: Mac で ssh -N agent-box を実行したまま http://logs.agent-box.localhost/select/vmui/
 # 状況確認: journalctl -u agent-env-victorialogs
 [Unit]
 Description=VictoriaLogs (log storage)

@@ -45,10 +45,10 @@
       versioningTemplate: 'semver',
     },
     {
-      description: 'dashboard.html が jsDelivr から読み込む uPlot（integrity は更新できないので、CI が表示する値で直す）',
+      description: '監視の概要ページが jsDelivr から読み込む uPlot（integrity は更新できないので、CI が表示する値で直す）',
       customType: 'regex',
       managerFilePatterns: [
-        '/^envs/debian-pc/dashboard\\.html$/',
+        '/^envs/debian-pc/gateway/web/dashboard\\.html$/',
       ],
       matchStrings: [
         'cdn\\.jsdelivr\\.net/npm/(?<depName>uplot)@(?<currentValue>[0-9][0-9.]*)/',
@@ -97,6 +97,14 @@
         '{"releases": [$map($[prerelease = false], function($r) { {"version": $r.tag_name, "releaseTimestamp": $r.published_at, "digest": $substringAfter($r.assets[name = "victoria-logs-linux-amd64-" & $r.tag_name & ".tar.gz" and $type(digest) = "string"].digest, "sha256:")} })[digest]]}',
       ],
     },
+    go: {
+      // go.dev の配布物の一覧から、安定版の linux-amd64 版の SHA256（digest）を取り出す。公開日時は無い
+      defaultRegistryUrlTemplate: 'https://go.dev/dl/?mode=json&include=all',
+      format: 'json',
+      transformTemplates: [
+        '{"releases": [$[stable = true].{"version": $substringAfter(version, "go"), "digest": files[os = "linux" and arch = "amd64" and kind = "archive"].sha256}][digest]}',
+      ],
+    },
     ttyd: {
       // GitHub のリリースの一覧から、静的リンク版（ttyd.x86_64）の SHA256（digest）を取り出す。digest が無いリリースは除く
       defaultRegistryUrlTemplate: 'https://api.github.com/repos/tsl0922/ttyd/releases?per_page=100',
@@ -128,6 +136,13 @@
       schedule: [
         '* * * * 1',
       ],
+    },
+    {
+      description: 'Go の配布物の一覧には公開日時が無いので待機期間を設けない（標準ライブラリのセキュリティ修正を早く入れる）',
+      matchDatasources: [
+        'custom.go',
+      ],
+      minimumReleaseAge: null,
     },
     {
       description: 'SHA256SUMS には公開日時が無いので待機期間を設けない。SHA256SUMS の署名は検証していないので、自動マージせず人が確認する',
