@@ -7,26 +7,30 @@ llama.cpp's llama-server runs at `http://127.0.0.1:8080/v1` (OpenAI-compatible, 
 | `qwen3.6-35b-a3b` | Text generation and image understanding. Context: 65536 tokens |
 | `qwen3-embedding-0.6b` | Embeddings (`/v1/embeddings`) |
 
-- First check that it is running with `curl -sf http://127.0.0.1:8080/models`. If it cannot be reached (e.g. a PC without a GPU), proceed without the local LLM.
-- A model is loaded on its first call, which can take tens of seconds or more. Use a long timeout (about 10 minutes). Generation is not fast either, so send requests one at a time instead of many in parallel.
-- The answer is in `.choices[0].message.content` (reasoning is returned separately in `reasoning_content`).
 - It is less capable than you and can make mistakes. Check the source before relying on its output for important decisions.
+- A model is loaded on its first call, which can take tens of seconds or more. Generation is not fast either, so send requests one at a time instead of many in parallel.
 
-Process a file's contents:
+## Text and images: the `local-llm` command
 
-```bash
-jq -n --rawfile text app.log '{model: "qwen3.6-35b-a3b", messages: [{role: "user", content: ("List the error types in this log with their counts.\n\n" + $text)}]}' \
-  | curl -sf --max-time 600 http://127.0.0.1:8080/v1/chat/completions -H 'Content-Type: application/json' -d @- \
-  | jq -r '.choices[0].message.content'
-```
-
-Read an image:
+`local-llm "<instruction>"` asks `qwen3.6-35b-a3b` and prints only the answer. Standard input is attached after the instruction, and `-i <file>` attaches an image (repeatable). It calls the API directly: the local LLM gets no tools and cannot run commands.
 
 ```bash
-jq -n --arg img "$(base64 -w0 screenshot.png)" '{model: "qwen3.6-35b-a3b", messages: [{role: "user", content: [{type: "text", text: "Transcribe all text in this image."}, {type: "image_url", image_url: {url: ("data:image/png;base64," + $img)}}]}]}' \
-  | curl -sf --max-time 600 http://127.0.0.1:8080/v1/chat/completions -H 'Content-Type: application/json' -d @- \
-  | jq -r '.choices[0].message.content'
+local-llm "List the error types in this log with their counts." < app.log
+git diff | local-llm "Summarize what this diff changes, one line per file."
+local-llm -i screenshot.png "Transcribe all text in this image." < /dev/null
 ```
+
+- Always redirect standard input (a file, a pipe, or `/dev/null`). Otherwise it can wait forever for input.
+- If the server is not running (e.g. a PC without a GPU), it exits with an error right away. Proceed without the local LLM.
+- The context is 65536 tokens, shared by the input and the answer (including its reasoning). Keep each input to about 40,000 tokens (roughly 100 KB of English or code, less for Japanese) and split larger inputs.
+
+### Letting it look around: `-a`
+
+With `-a`, the local LLM runs as an agent (Codex) in a read-only sandbox: it can read files and run commands such as `rg`, `ls`, or `git log` from the current directory, but cannot write files or use the network. Use it when the local LLM should find and read the relevant files itself, e.g. `local-llm -a "Which files in this repository read the DATABASE_URL environment variable?" < /dev/null`. It is slower, and Codex's own prompt takes about 5,000 tokens of the context.
+
+## Embeddings and scripts: the API
+
+Call `http://127.0.0.1:8080/v1` directly with a long timeout (about 10 minutes). Chat answers are in `.choices[0].message.content` (reasoning is returned separately in `reasoning_content`). `curl -sf http://127.0.0.1:8080/models` checks that it is running.
 
 Embeddings (`input` accepts an array of texts; prefix the search query, not the documents, with `Instruct: Given a search query, retrieve relevant passages that answer the query\nQuery: ` for better accuracy):
 

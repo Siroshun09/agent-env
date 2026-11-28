@@ -139,10 +139,10 @@ NVIDIA の GPU がある PC では、llama.cpp の `llama-server` がサービ�
   | `qwen3-embedding-0.6b` | 埋め込み（`/v1/embeddings`） | Qwen3-Embedding-0.6B（約 0.6GB）。CPU だけで動かします |
 
 - llama-server はルーターモードで動き、リクエストの `"model"` で指定されたモデルを必要になった時点で読み込みます（同時に 2 つまで）。初回の呼び出しは読み込みの分だけ遅くなります。
-- Codex からは `codex -c model_provider=llama-cpp -m qwen3.6-35b-a3b` で使えます（Responses API で接続します）。`claude -p` のように一度だけ実行して応答だけを見るときは `local-llm "…"` を使います（中身は `codex exec`。`cat file | local-llm "要約して"` のように標準入力も渡せます。Codex のログは失敗したときだけ表示します）。スクリプトなどからは `http://127.0.0.1:8080/v1` を直接呼び、`"model"` にモデル名を指定します。
+- Codex からは `codex -c model_provider=llama-cpp -m qwen3.6-35b-a3b` で使えます（Responses API で接続します）。`claude -p` のように一度だけ依頼して応答だけを見るときは `local-llm "…"` を使います（`cat file | local-llm "要約して"` のように標準入力も、`-i` で画像も渡せます）。`local-llm` は既定では Codex を通さずに API を直接呼ぶので、余計な指示が入らず、LLM がコマンドを実行することもありません（扱うデータに紛れた指示に従っても、文章を返すことしかできません）。`-a` を付けると、Codex を読み取り専用のサンドボックスで使い、LLM 自身がファイルを読んだりコマンド（`rg`、`git log` など）を実行したりして調べます（書き込みと通信はできません）。思考は llama-server の既定のまま（有効、上限なし）です。スクリプトなどからは `http://127.0.0.1:8080/v1` を直接呼び、`"model"` にモデル名を指定します。
 - Mac からは、`ssh -N agent-box` を実行したまま http://llm.agent-box.localhost を開くとチャット画面を使えます。
 - Claude Code と Codex には、ローカル LLM を使う場面を指示しています（`envs/debian-pc/system/agents/instructions.md`）。外に出したくないデータの処理、大量のテキストの下処理、意味での検索などで使い、コードの設計や実装など品質が重要な作業には使いません。Claude Code は管理者用の CLAUDE.md（`/etc/claude-code/CLAUDE.md`）として、Codex は管理者用の設定の `developer_instructions` として読みます。
-  - この指示は毎回のリクエストに含まれるので短くしています。呼び出し方の詳細（`agents/local-llm.md`、PC では `/etc/agent-env/local-llm.md`）は、使うときにエージェントが読みます。
+  - 文章の処理には `local-llm` コマンドを使うよう指示しています。この指示は毎回のリクエストに含まれるので短くしています。画像、埋め込み、入力の上限などの詳細（`agents/local-llm.md`、PC では `/etc/agent-env/local-llm.md`）は、必要なときにエージェントが読みます。
 - モデルを追加・削除するときは、`tools.conf` の `LLAMA_FILES`、`system/llama-models.ini` を書き換えます。`tools.conf` から消したファイルは、次の bootstrap で消えます。モデルは / （128GB）に置くので、合計サイズに注意してください。
 - llama.cpp は毎日リリースされるので、Renovate の更新 PR は週 1 回です。バージョンと SHA256（GitHub がリリースの添付ファイルごとに公開している値）を一緒に更新します。
 
@@ -154,7 +154,7 @@ NVIDIA の GPU がある PC では、llama.cpp の `llama-server` がサービ�
 | CPU・メモリ・ディスク・ネットワーク | node_exporter（`agent-env-node-exporter.service`） | VictoriaMetrics が 30 秒ごとに取りに行く |
 | GPU（使用率、VRAM、消費電力、温度など） | `nvidia-smi` の結果をファイルに書き、node_exporter が読む（`agent-env-gpu-metrics.timer`。NVIDIA の GPU がある場合だけ） | 同上 |
 | ローカル LLM（トークン数、処理速度、待ちの数など） | llama-server の `--metrics`。読み込まれているモデルの分だけ取れる | 同上 |
-| Claude Code と Codex（`local-llm` を含む）の利用状況 | 管理者用の設定で OpenTelemetry を有効にし、エージェントから送る | 指標（トークン数、所要時間など）は VictoriaMetrics、イベント（API の呼び出し、ツールの実行など）は VictoriaLogs |
+| Claude Code と Codex の利用状況（`-a` なしの `local-llm` は Codex を通さないので、ローカル LLM の指標だけに表れる） | 管理者用の設定で OpenTelemetry を有効にし、エージェントから送る | 指標（トークン数、所要時間など）は VictoriaMetrics、イベント（API の呼び出し、ツールの実行など）は VictoriaLogs |
 
 - 主要な指標（CPU、メモリ、ディスク、GPU、ローカル LLM、エージェント）は、`ssh -N agent-box` を実行したまま http://dash.agent-box.localhost を開くと 1 ページで見られます（30 秒ごとに更新）。ページは `envs/debian-pc/gateway/web/dashboard.html` で、グラフの描画には uPlot を jsDelivr から読み込みます（版と SRI ハッシュで固定）。
 - 細かく調べるとき（範囲の拡大、任意のクエリ）は、指標は http://metrics.agent-box.localhost/vmui/ 、ログは http://logs.agent-box.localhost/select/vmui/ を使います。
