@@ -8,10 +8,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 )
+
+// tailnetHost は、テストで使う tailnet でのホスト名
+const tailnetHost = "agent-box.example.ts.net"
 
 // startUpstream は handler で応答するサーバーを立て、その URL を返す
 func startUpstream(t *testing.T, handler http.HandlerFunc) *url.URL {
@@ -46,7 +52,7 @@ func startGateway(t *testing.T, up *url.URL) *httptest.Server {
 			logs:    startUpstream(t, echo("logs")),
 		}
 	}
-	gw := httptest.NewServer(newHandler(ups))
+	gw := httptest.NewServer(newHandler(ups, tailnetHost))
 	t.Cleanup(gw.Close)
 	return gw
 }
@@ -100,6 +106,17 @@ func TestRouting(t *testing.T) {
 		{"GET", "term.agent-box.localhost.evil.example:8700", "/", 421, ""},
 		{"GET", "127.0.0.1:8700", "/", 421, ""},
 		{"GET", "", "/", 421, ""},
+		// tailnet（tailscale serve から）。画面はポートで選ぶ
+		{"GET", "agent-box.example.ts.net", "/", 200, "<title>agent-box</title>"},
+		{"GET", "AGENT-BOX.example.ts.net:443", "/", 200, "<title>agent-box</title>"},
+		{"GET", "agent-box.example.ts.net:8443", "/ws", 200, "term host=agent-box.example.ts.net:8443 path=/ws"},
+		{"GET", "agent-box.example.ts.net:8444", "/", 200, "<title>監視の概要</title>"},
+		{"GET", "agent-box.example.ts.net:8445", "/v1/models", 200, "llm host=agent-box.example.ts.net:8445"},
+		{"GET", "agent-box.example.ts.net:8446", "/vmui/", 200, "metrics host=agent-box.example.ts.net:8446"},
+		{"GET", "agent-box.example.ts.net:8447", "/select/vmui/", 200, "logs host=agent-box.example.ts.net:8447"},
+		{"GET", "agent-box.example.ts.net:9999", "/", 421, ""},
+		{"GET", "other.example.ts.net", "/", 421, ""},
+		{"GET", "term.agent-box.example.ts.net:8443", "/", 421, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.host+tt.path, func(t *testing.T) {
@@ -171,6 +188,16 @@ func TestCrossOrigin(t *testing.T) {
 			map[string]string{"Origin": "https://evil.example"}, 403},
 		{"Origin が null", "POST", "llm.agent-box.localhost:8700", map[string]string{"Origin": "null"}, 403},
 		{"Origin のポートが違う", "POST", "llm.agent-box.localhost:8700", map[string]string{"Origin": "http://llm.agent-box.localhost:9999"}, 403},
+		{"tailnet: 同じオリジンからの送信", "POST", "agent-box.example.ts.net:8445",
+			map[string]string{"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "cors", "Origin": "https://agent-box.example.ts.net:8445"}, 200},
+		{"tailnet: ほかの画面から一覧のページ（443）への送信", "POST", "agent-box.example.ts.net",
+			map[string]string{"Origin": "https://agent-box.example.ts.net:8445"}, 403},
+		{"tailnet: http の Origin", "POST", "agent-box.example.ts.net:8445", map[string]string{"Origin": "http://agent-box.example.ts.net:8445"}, 403},
+		{"tailnet: ほかの画面（ポート違い）からの fetch", "GET", "agent-box.example.ts.net:8443",
+			map[string]string{"Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "cors", "Origin": "https://agent-box.example.ts.net:8445"}, 403},
+		{"tailnet: 一覧のページからのリンク", "GET", "agent-box.example.ts.net:8443",
+			map[string]string{"Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}, 200},
+		{"localhost に https の Origin", "POST", "llm.agent-box.localhost:8700", map[string]string{"Origin": "https://llm.agent-box.localhost:8700"}, 403},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -289,4 +316,55 @@ func TestWebSocket(t *testing.T) {
 			t.Errorf("got %d, want 403", res.StatusCode)
 		}
 	})
+}
+
+// tailnet から開かない設定（tailnetHost が空）では、tailnet のホスト名を拒否する
+func TestNoTailnet(t *testing.T) {
+	up := startUpstream(t, echo("term"))
+	gw := httptest.NewServer(newHandler(upstreams{term: up, llm: up, metrics: up, logs: up}, ""))
+	t.Cleanup(gw.Close)
+	for _, host := range []string{"agent-box.example.ts.net", ":443", ":8443"} {
+		if res, _ := get(t, gw, "GET", host, "/", nil); res.StatusCode != http.StatusMisdirectedRequest {
+			t.Errorf("%s: got %d, want 421", host, res.StatusCode)
+		}
+	}
+}
+
+// 画面ごとのポートが、一覧のページ（data-port）と tailscale serve を設定するスクリプトで一致している
+func TestTailnetPortsInSync(t *testing.T) {
+	var want []string
+	for _, p := range tailnetPorts {
+		want = append(want, p)
+	}
+	slices.Sort(want)
+
+	index, err := web.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := []string{tailnetPorts[""]}
+	for _, m := range regexp.MustCompile(`data-host="(\w+)" data-port="(\d+)"`).FindAllStringSubmatch(string(index), -1) {
+		if tailnetPorts[m[1]] != m[2] {
+			t.Errorf("index.html: %s の data-port は %s、tailnetPorts は %s", m[1], m[2], tailnetPorts[m[1]])
+		}
+		got = append(got, m[2])
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Errorf("index.html のポート %v、tailnetPorts %v", got, want)
+	}
+
+	script, err := os.ReadFile("../system/agent-env-tailnet-serve.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`for port in ([\d ]+); do`).FindSubmatch(script)
+	if m == nil {
+		t.Fatal("agent-env-tailnet-serve.sh にポートの一覧がありません")
+	}
+	got = strings.Fields(string(m[1]))
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Errorf("agent-env-tailnet-serve.sh のポート %v、tailnetPorts %v", got, want)
+	}
 }

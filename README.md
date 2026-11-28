@@ -123,6 +123,16 @@ Host agent-box
 
 Tailscale は、PC の SSH（公開鍵のみ）に届く経路を増やすだけで、SSH の認証は変わりません。Tailscale の更新は、Debian と同じく自動で適用します。
 
+#### ブラウザだけで開く（iPhone など）
+SSH なしで、Tailscale のアプリを入れた端末（iPhone など）のブラウザから、[ブラウザで開く画面](#ブラウザで開く画面)を開けるようにもできます。初回だけ、自宅で次を行います。
+1. Tailscale の管理画面（DNS）で、MagicDNS と HTTPS Certificates を有効にします。証明書の発行により、マシン名と tailnet 名（`<名前>.ts.net`）が公開の証明書ログ（Certificate Transparency）に載ります。名前が知られるだけで、tailnet の外からは接続できません。
+2. PC を接続した状態（`sudo tailscale up` のあと）で `ssh -t agent-box sudo agent-env-tailnet-serve` を実行します。表示された `https://agent-box.<tailnet>.ts.net/` が一覧のページです。
+   - `tailscale serve` で、画面ごとのポート（一覧 443、端末 8443、監視の概要 8444、ローカル LLM 8445、指標 8446、ログ 8447）をゲートウェイに中継します。ポートごとに別のオリジンになるので、画面どうしは `*.localhost` と同じく分けられます。
+   - 設定は Tailscale に保存され、再起動しても残ります。公開されるのは PC が接続している間だけです。やめるときは `sudo tailscale serve reset` を実行します。
+3. iPhone などに Tailscale のアプリを入れ、同じアカウントでログインします。
+
+使うときは、端末の Tailscale を接続し、一覧のページの URL を開きます。ブラウザの端末は、`*.localhost` と同じユーザー名とパスワードで開きます。iPhone のキーボードには Esc や Ctrl が無いので、文字の入力とペースト以外の操作はしにくいです。
+
 ### ブラウザで開く画面
 `ssh -N agent-box` を実行したまま、Mac のブラウザで http://agent-box.localhost を開くと、PC 内の画面の一覧が表示されます。
 

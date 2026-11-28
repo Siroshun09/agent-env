@@ -1,6 +1,7 @@
 // agent-env-gateway は、Mac のブラウザから PC 内の画面を開くための入口。
 //
 // Mac からの SSH の転送を 1 本（127.0.0.1:8700）にまとめ、ホスト名で PC 内のサービスに振り分ける。
+// 外出先からは、tailscale serve が tailnet（Tailscale）で受けた HTTPS をここに中継する。
 // 外部のライブラリは使わない（標準ライブラリだけ）。
 package main
 
@@ -22,11 +23,12 @@ var defaultUpstreams = upstreams{
 
 func main() {
 	addr := flag.String("listen", "127.0.0.1:8700", "待ち受けるアドレス")
+	tailnetHost := flag.String("tailnet-host", "", "tailnet（Tailscale）でのこの PC のホスト名（例: agent-box.example.ts.net）。空なら tailnet からは開けない")
 	flag.Parse()
 
 	srv := &http.Server{
 		Addr:    *addr,
-		Handler: newHandler(defaultUpstreams),
+		Handler: newHandler(defaultUpstreams, *tailnetHost),
 		// 端末（WebSocket）と LLM の応答（SSE）は長く続くので、読み書き全体の時間は制限しない
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
