@@ -18,8 +18,11 @@ fi
 printf 'TAILNET_HOST=%s\n' "${host}" > /etc/agent-env/gateway.env
 systemctl restart agent-env-gateway.service
 
-# 画面ごとのポート（gateway/gateway.go の tailnetPorts と合わせる）を、すべてゲートウェイに中継する
+# 画面ごとのポート（gateway/gateway.go の tailnetPorts と合わせる）を、すべてゲートウェイの tailnet の入口に中継する。
+# tailnet の入口は、どのリクエストにも Basic 認証を求める。SSH の転送の入口（8700）には中継しない（認証を求めないため）。
+# 以前の設定（中継先や、使わなくなったポート）が残らないよう、いったん消してから設定する
+tailscale serve reset
 for port in 443 8443 8444 8445 8446 8447; do
-  tailscale serve --bg --https="${port}" http://127.0.0.1:8700
+  tailscale serve --bg --https="${port}" http://127.0.0.1:8701
 done
 echo "https://${host}/ で開けます（tailscale up の間だけ）"

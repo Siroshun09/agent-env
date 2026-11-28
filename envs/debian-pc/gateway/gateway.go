@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"embed"
 	"log"
 	"net"
@@ -39,10 +40,8 @@ type site struct {
 	scheme  string // オリジンのスキーム（ブラウザが送る Origin と比べる）
 }
 
-// newHandler は、ホスト名ごとに振り分けるハンドラーを返す。
-// ホスト名ごとに別のオリジンになるので、ある画面の不具合（XSS など）が、ほかの画面（端末など）に及ばない。
-// tailnetHost が空でなければ、tailscale serve から届く https://<tailnetHost>:<ポート> でも開けるようにする
-func newHandler(up upstreams, tailnetHost string) http.Handler {
+// screens は、画面の名前（"" は一覧のページ）ごとのハンドラーを返す
+func screens(up upstreams) map[string]http.Handler {
 	metrics := newProxy(up.metrics)
 
 	index := http.NewServeMux()
@@ -54,7 +53,7 @@ func newHandler(up upstreams, tailnetHost string) http.Handler {
 	dash.Handle("GET /api/v1/query", metrics)
 	dash.Handle("GET /api/v1/query_range", metrics)
 
-	screens := map[string]http.Handler{
+	return map[string]http.Handler{
 		"":        index,
 		"dash":    dash,
 		"term":    newProxy(up.term),
@@ -62,18 +61,46 @@ func newHandler(up upstreams, tailnetHost string) http.Handler {
 		"metrics": metrics,
 		"logs":    newProxy(up.logs),
 	}
+}
+
+// newHandler は、SSH の転送で届くリクエスト（http://<名前>.agent-box.localhost）を、ホスト名で振り分けるハンドラーを返す。
+// ホスト名ごとに別のオリジンになるので、ある画面の不具合（XSS など）が、ほかの画面（端末など）に及ばない。
+// SSH の認証を通ったリクエストなので、Basic 認証は求めない
+func newHandler(up upstreams) http.Handler {
 	sites := map[string]site{}
-	for name, h := range screens {
+	for name, h := range screens(up) {
 		host := domain
 		if name != "" {
 			host = name + "." + domain
 		}
 		sites[host] = site{h, "http"}
-		if tailnetHost != "" {
-			sites[net.JoinHostPort(hostname(tailnetHost), tailnetPorts[name])] = site{h, "https"}
-		}
 	}
-	return guard(sites)
+	return rejectProxied(guard(sites))
+}
+
+// newTailnetHandler は、tailscale serve が中継するリクエスト（https://<host>:<ポート>）を、ポートで振り分けるハンドラーを返す。
+// tailscale serve で使えるホスト名は 1 台に 1 つなので、ポートで別のオリジンにする。
+// tailnet から届くリクエストには、ホスト名を確認する前に、必ず Basic 認証を求める。
+// tailscale serve は Host ヘッダーを確かめずに中継するので、Host を *.localhost にしても認証は省けない
+func newTailnetHandler(up upstreams, host, password string) http.Handler {
+	sites := map[string]site{}
+	for name, h := range screens(up) {
+		sites[net.JoinHostPort(hostname(host), tailnetPorts[name])] = site{h, "https"}
+	}
+	return basicAuth(guard(sites), "agent", password)
+}
+
+// rejectProxied は、tailscale serve が中継したリクエスト（X-Forwarded-Host がある）を拒否する。
+// SSH の転送の入口には届かない設定だが、tailscale serve の中継先を誤ってこの入口にしても、
+// tailnet から認証なしで開けないようにする
+func rejectProxied(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Forwarded-Host") != "" {
+			http.Error(w, "proxied request", http.StatusForbidden)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 // guard は、次のリクエストを拒否してから、ホスト名に対応するハンドラーに渡す。
@@ -94,6 +121,22 @@ func guard(sites map[string]site) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Add("Content-Security-Policy", "frame-ancestors 'none'")
 		s.handler.ServeHTTP(w, r)
+	})
+}
+
+// basicAuth は、Basic 認証に通ったリクエストだけを h に渡すハンドラーを返す。
+// Authorization ヘッダーはそのまま渡す（ブラウザの端末の ttyd も、同じユーザー名とパスワードで確認する）
+func basicAuth(h http.Handler, user, password string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u, p, ok := r.BasicAuth()
+		// パスワードが空のときは誰も通さない。比較にかかる時間から、パスワードを推測されないようにする
+		if !ok || password == "" ||
+			subtle.ConstantTimeCompare([]byte(u), []byte(user))&subtle.ConstantTimeCompare([]byte(p), []byte(password)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Basic realm="agent-box", charset="UTF-8"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		h.ServeHTTP(w, r)
 	})
 }
 

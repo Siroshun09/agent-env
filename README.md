@@ -129,11 +129,11 @@ Tailscale は、PC の SSH（公開鍵のみ）に届く経路を増やすだけ
 SSH なしで、Tailscale のアプリを入れた端末（iPhone など）のブラウザから、[ブラウザで開く画面](#ブラウザで開く画面)を開けるようにもできます。初回だけ、自宅で次を行います。
 1. Tailscale の管理画面（DNS）で、MagicDNS と HTTPS Certificates を有効にします。証明書の発行により、マシン名と tailnet 名（`<名前>.ts.net`）が公開の証明書ログ（Certificate Transparency）に載り、あとから消せません。名前が知られるだけで、tailnet の外からは接続できませんが、マシン名は先に推測しにくい名前に変えておきます（初回の手順の 3）。tailnet 名も、管理画面（DNS）で自分で選んだ名前に変えている場合は、個人を連想させないか確認してください。
 2. PC を接続した状態（`sudo tailscale up` のあと）で `ssh -t agent-box sudo agent-env-tailnet-serve` を実行します。表示された `https://<マシン名>.<tailnet>.ts.net/` が一覧のページです。
-   - `tailscale serve` で、画面ごとのポート（一覧 443、端末 8443、監視の概要 8444、ローカル LLM 8445、指標 8446、ログ 8447）をゲートウェイに中継します。ポートごとに別のオリジンになるので、画面どうしは `*.localhost` と同じく分けられます。
+   - `tailscale serve` で、画面ごとのポート（一覧 443、端末 8443、監視の概要 8444、ローカル LLM 8445、指標 8446、ログ 8447）を、ゲートウェイの tailnet 用の入口（127.0.0.1:8701）に中継します。ポートごとに別のオリジンになるので、画面どうしは `*.localhost` と同じく分けられます。
    - 設定は Tailscale に保存され、再起動しても残ります。公開されるのは PC が接続している間だけです。やめるときは `sudo tailscale serve reset` を実行します。
 3. iPhone などに Tailscale のアプリを入れ、同じアカウントでログインします。
 
-使うときは、端末の Tailscale を接続し、一覧のページの URL を開きます。ブラウザの端末は、`*.localhost` と同じユーザー名とパスワードで開きます。iPhone のキーボードには Esc や Ctrl が無いので、文字の入力とペースト以外の操作はしにくいです。
+使うときは、端末の Tailscale を接続し、一覧のページの URL を開きます。tailnet からは、どの画面もブラウザの端末と同じユーザー名（`agent`）とパスワード（`sudo cat /etc/agent-env/terminal.env`）を求めます。万一、tailnet に不正な端末が入っても、監視やログの画面を見られないようにするためです。SSH の転送で開く `*.localhost` では、SSH の認証で足りるので求めません。認証を求めるかは、ゲートウェイがどの入口（SSH の転送用の 8700、tailnet 用の 8701）で受けたかで決め、送る側が自由に決められる Host ヘッダーでは決めません。iPhone のキーボードには Esc や Ctrl が無いので、文字の入力とペースト以外の操作はしにくいです。
 
 ### ブラウザで開く画面
 `ssh -N agent-box` を実行したまま、Mac のブラウザで http://agent-box.localhost を開くと、PC 内の画面の一覧が表示されます。
