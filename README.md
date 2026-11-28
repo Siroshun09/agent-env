@@ -133,7 +133,7 @@ SSH なしで、Tailscale のアプリを入れた端末（iPhone など）の�
    - 設定は Tailscale に保存され、再起動しても残ります。公開されるのは PC が接続している間だけです。やめるときは `sudo tailscale serve reset` を実行します。
 3. iPhone などに Tailscale のアプリを入れ、同じアカウントでログインします。
 
-使うときは、端末の Tailscale を接続し、一覧のページの URL を開きます。ブラウザの端末は、`*.localhost` と同じユーザー名とパスワードで開きます。iPhone のキーボードには Esc や Ctrl が無いので、文字の入力とペースト以外の操作はしにくいです。
+使うときは、端末の Tailscale を接続し、一覧のページの URL を開きます。tailnet からは、どの画面もブラウザの端末と同じユーザー名（`agent`）とパスワード（`sudo cat /etc/agent-env/terminal.env`）を求めます。万一、tailnet に不正な端末が入っても、監視やログの画面を見られないようにするためです。SSH の転送で開く `*.localhost` では、SSH の認証で足りるので求めません。iPhone のキーボードには Esc や Ctrl が無いので、文字の入力とペースト以外の操作はしにくいです。
 
 ### ブラウザで開く画面
 `ssh -N agent-box` を実行したまま、Mac のブラウザで http://agent-box.localhost を開くと、PC 内の画面の一覧が表示されます。

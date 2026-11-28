@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"embed"
 	"log"
 	"net"
@@ -39,10 +40,17 @@ type site struct {
 	scheme  string // オリジンのスキーム（ブラウザが送る Origin と比べる）
 }
 
+// tailnet は、tailnet（Tailscale）から開くための設定
+type tailnet struct {
+	host     string // この PC のホスト名（例: agent-box.example.ts.net）。空なら tailnet からは開けない
+	password string // Basic 認証のパスワード（ユーザー名は agent。ブラウザの端末と同じ）
+}
+
 // newHandler は、ホスト名ごとに振り分けるハンドラーを返す。
 // ホスト名ごとに別のオリジンになるので、ある画面の不具合（XSS など）が、ほかの画面（端末など）に及ばない。
-// tailnetHost が空でなければ、tailscale serve から届く https://<tailnetHost>:<ポート> でも開けるようにする
-func newHandler(up upstreams, tailnetHost string) http.Handler {
+// tn.host が空でなければ、tailscale serve から届く https://<tn.host>:<ポート> でも開けるようにする。
+// tailnet からは、どの画面にも Basic 認証を求める（SSH の転送で届く *.localhost は、SSH の認証で足りるので求めない）
+func newHandler(up upstreams, tn tailnet) http.Handler {
 	metrics := newProxy(up.metrics)
 
 	index := http.NewServeMux()
@@ -69,8 +77,8 @@ func newHandler(up upstreams, tailnetHost string) http.Handler {
 			host = name + "." + domain
 		}
 		sites[host] = site{h, "http"}
-		if tailnetHost != "" {
-			sites[net.JoinHostPort(hostname(tailnetHost), tailnetPorts[name])] = site{h, "https"}
+		if tn.host != "" {
+			sites[net.JoinHostPort(hostname(tn.host), tailnetPorts[name])] = site{basicAuth(h, "agent", tn.password), "https"}
 		}
 	}
 	return guard(sites)
@@ -94,6 +102,22 @@ func guard(sites map[string]site) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Add("Content-Security-Policy", "frame-ancestors 'none'")
 		s.handler.ServeHTTP(w, r)
+	})
+}
+
+// basicAuth は、Basic 認証に通ったリクエストだけを h に渡すハンドラーを返す。
+// Authorization ヘッダーはそのまま渡す（ブラウザの端末の ttyd も、同じユーザー名とパスワードで確認する）
+func basicAuth(h http.Handler, user, password string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u, p, ok := r.BasicAuth()
+		// パスワードが空のときは誰も通さない。比較にかかる時間から、パスワードを推測されないようにする
+		if !ok || password == "" ||
+			subtle.ConstantTimeCompare([]byte(u), []byte(user))&subtle.ConstantTimeCompare([]byte(p), []byte(password)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Basic realm="agent-box", charset="UTF-8"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		h.ServeHTTP(w, r)
 	})
 }
 

@@ -10,6 +10,8 @@ After=network.target
 DynamicUser=yes
 # tailnet でのホスト名（TAILNET_HOST）。agent-env-tailnet-serve が書く。無ければ tailnet からは開けない
 EnvironmentFile=-/etc/agent-env/gateway.env
+# tailnet から開くときの Basic 認証のパスワード（ブラウザの端末と同じ TERMINAL_PASSWORD）
+EnvironmentFile=/etc/agent-env/terminal.env
 ExecStart=/usr/local/bin/agent-env-gateway -listen 127.0.0.1:8700 -tailnet-host=${TAILNET_HOST}
 Restart=on-failure
 RestartSec=5

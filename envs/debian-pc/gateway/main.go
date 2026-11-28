@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 )
 
@@ -25,10 +26,14 @@ func main() {
 	addr := flag.String("listen", "127.0.0.1:8700", "待ち受けるアドレス")
 	tailnetHost := flag.String("tailnet-host", "", "tailnet（Tailscale）でのこの PC のホスト名（例: agent-box.example.ts.net）。空なら tailnet からは開けない")
 	flag.Parse()
+	// tailnet からの Basic 認証のパスワード（ブラウザの端末と同じ）。コマンドラインに出さないよう、環境変数で受け取る
+	if *tailnetHost != "" && os.Getenv("TERMINAL_PASSWORD") == "" {
+		log.Fatal("-tailnet-host を使うには、環境変数 TERMINAL_PASSWORD が必要です")
+	}
 
 	srv := &http.Server{
 		Addr:    *addr,
-		Handler: newHandler(defaultUpstreams, *tailnetHost),
+		Handler: newHandler(defaultUpstreams, tailnet{host: *tailnetHost, password: os.Getenv("TERMINAL_PASSWORD")}),
 		// 端末（WebSocket）と LLM の応答（SSE）は長く続くので、読み書き全体の時間は制限しない
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,

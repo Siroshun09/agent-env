@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
@@ -16,8 +17,23 @@ import (
 	"time"
 )
 
-// tailnetHost は、テストで使う tailnet でのホスト名
-const tailnetHost = "agent-box.example.ts.net"
+// テストで使う tailnet の設定
+const (
+	tailnetHost     = "agent-box.example.ts.net"
+	tailnetPassword = "secret"
+)
+
+// withTailnetAuth は、host が tailnet のホスト名なら、header に正しい Basic 認証を加えて返す
+func withTailnetAuth(host string, header map[string]string) map[string]string {
+	if !strings.Contains(host, ".ts.net") {
+		return header
+	}
+	h := map[string]string{"Authorization": "Basic " + base64.StdEncoding.EncodeToString([]byte("agent:"+tailnetPassword))}
+	for k, v := range header {
+		h[k] = v
+	}
+	return h
+}
 
 // startUpstream は handler で応答するサーバーを立て、その URL を返す
 func startUpstream(t *testing.T, handler http.HandlerFunc) *url.URL {
@@ -52,7 +68,7 @@ func startGateway(t *testing.T, up *url.URL) *httptest.Server {
 			logs:    startUpstream(t, echo("logs")),
 		}
 	}
-	gw := httptest.NewServer(newHandler(ups, tailnetHost))
+	gw := httptest.NewServer(newHandler(ups, tailnet{tailnetHost, tailnetPassword}))
 	t.Cleanup(gw.Close)
 	return gw
 }
@@ -120,7 +136,7 @@ func TestRouting(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.host+tt.path, func(t *testing.T) {
-			res, body := get(t, gw, tt.method, tt.host, tt.path, nil)
+			res, body := get(t, gw, tt.method, tt.host, tt.path, withTailnetAuth(tt.host, nil))
 			if res.StatusCode != tt.wantCode || !strings.Contains(body, tt.wantBody) {
 				t.Errorf("got %d %q, want %d containing %q", res.StatusCode, body, tt.wantCode, tt.wantBody)
 			}
@@ -201,7 +217,7 @@ func TestCrossOrigin(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if res, body := get(t, gw, tt.method, tt.host, "/x", tt.header); res.StatusCode != tt.wantCode {
+			if res, body := get(t, gw, tt.method, tt.host, "/x", withTailnetAuth(tt.host, tt.header)); res.StatusCode != tt.wantCode {
 				t.Errorf("got %d %q, want %d", res.StatusCode, body, tt.wantCode)
 			}
 		})
@@ -318,10 +334,59 @@ func TestWebSocket(t *testing.T) {
 	})
 }
 
+// tailnet からは、どの画面にも Basic 認証を求める。*.localhost（SSH の転送）では求めない
+func TestTailnetAuth(t *testing.T) {
+	gw := startGateway(t, nil)
+	basic := func(user, password string) map[string]string {
+		return map[string]string{"Authorization": "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password))}
+	}
+	tests := []struct {
+		name     string
+		host     string
+		header   map[string]string
+		wantCode int
+	}{
+		{"認証なし（一覧）", "agent-box.example.ts.net", nil, 401},
+		{"認証なし（指標）", "agent-box.example.ts.net:8446", nil, 401},
+		{"パスワードが違う", "agent-box.example.ts.net:8446", basic("agent", "wrong"), 401},
+		{"ユーザー名が違う", "agent-box.example.ts.net:8446", basic("owner", tailnetPassword), 401},
+		{"正しい認証", "agent-box.example.ts.net:8446", basic("agent", tailnetPassword), 200},
+		{"*.localhost は認証なしで開ける", "metrics.agent-box.localhost:8700", nil, 200},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, body := get(t, gw, "GET", tt.host, "/vmui/", tt.header)
+			if res.StatusCode != tt.wantCode {
+				t.Errorf("got %d %q, want %d", res.StatusCode, body, tt.wantCode)
+			}
+			if tt.wantCode == http.StatusUnauthorized && !strings.HasPrefix(res.Header.Get("WWW-Authenticate"), "Basic ") {
+				t.Errorf("WWW-Authenticate = %q", res.Header.Get("WWW-Authenticate"))
+			}
+		})
+	}
+
+	// 端末（ttyd）には Authorization がそのまま届く（ttyd も同じパスワードで確認する）
+	_, body := get(t, gw, "GET", "agent-box.example.ts.net:8443", "/", basic("agent", tailnetPassword))
+	if want := "auth=Basic " + base64.StdEncoding.EncodeToString([]byte("agent:"+tailnetPassword)); !strings.Contains(body, want) {
+		t.Errorf("upstream got %q", body)
+	}
+}
+
+// パスワードが空なら、tailnet からは誰も通さない
+func TestTailnetEmptyPassword(t *testing.T) {
+	up := startUpstream(t, echo("term"))
+	gw := httptest.NewServer(newHandler(upstreams{term: up, llm: up, metrics: up, logs: up}, tailnet{host: tailnetHost}))
+	t.Cleanup(gw.Close)
+	res, _ := get(t, gw, "GET", tailnetHost, "/", map[string]string{"Authorization": "Basic " + base64.StdEncoding.EncodeToString([]byte("agent:"))})
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("got %d, want 401", res.StatusCode)
+	}
+}
+
 // tailnet から開かない設定（tailnetHost が空）では、tailnet のホスト名を拒否する
 func TestNoTailnet(t *testing.T) {
 	up := startUpstream(t, echo("term"))
-	gw := httptest.NewServer(newHandler(upstreams{term: up, llm: up, metrics: up, logs: up}, ""))
+	gw := httptest.NewServer(newHandler(upstreams{term: up, llm: up, metrics: up, logs: up}, tailnet{}))
 	t.Cleanup(gw.Close)
 	for _, host := range []string{"agent-box.example.ts.net", ":443", ":8443"} {
 		if res, _ := get(t, gw, "GET", host, "/", nil); res.StatusCode != http.StatusMisdirectedRequest {
