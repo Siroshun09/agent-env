@@ -24,6 +24,10 @@ local-llm -i screenshot.png "Transcribe all text in this image." < /dev/null
 - If the server is not running (e.g. a PC without a GPU), it exits with an error right away. Proceed without the local LLM.
 - The context is 65536 tokens, shared by the input and the answer (including its reasoning). Keep each input to about 40,000 tokens (roughly 100 KB of English or code, less for Japanese) and split larger inputs.
 
+### Letting it look around: `-a`
+
+With `-a`, the local LLM runs as an agent (Codex) in a read-only sandbox: it can read files and run commands such as `rg`, `ls`, or `git log` from the current directory, but cannot write files or use the network. Use it when the local LLM should find and read the relevant files itself, e.g. `local-llm -a "Which files in this repository read the DATABASE_URL environment variable?" < /dev/null`. It is slower, and Codex's own prompt takes about 5,000 tokens of the context.
+
 ## Embeddings and scripts: the API
 
 Call `http://127.0.0.1:8080/v1` directly with a long timeout (about 10 minutes). Chat answers are in `.choices[0].message.content` (reasoning is returned separately in `reasoning_content`). `curl -sf http://127.0.0.1:8080/models` checks that it is running.

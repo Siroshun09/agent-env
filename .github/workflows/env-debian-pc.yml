@@ -329,7 +329,7 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' 'http://127.0.0.1:8428/debug/pprof/')" = 401
           test "$(curl -s -o /dev/null -w '%{http_code}' 'http://127.0.0.1:9428/delete/run_task?filter=x')" = 401
           # 偽の llama-server を立てる。local-llm（Chat Completions）は応答だけを表示し、標準入力を付けて送ること。
-          # Codex（Responses API）は利用状況が届き、プロンプトは伏せられること
+          # local-llm -a（Codex、Responses API）は応答だけを表示し、利用状況が届き、プロンプトは伏せられること
           cat > /tmp/fake-llm.py <<'PY'
           import http.server, json
           class H(http.server.BaseHTTPRequestHandler):
@@ -355,8 +355,7 @@ jobs:
           for _ in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:8080/models && break; sleep 1; done
           test "$(su - agent -c 'local-llm hello < /dev/null')" = "FAKE-ANSWER hello"
           test "$(su - agent -c 'echo input | local-llm hello')" = "FAKE-ANSWER hello  <stdin> input </stdin>"
-          codex_llm() { su - agent -c "timeout 60 codex exec --skip-git-repo-check --ephemeral -c model_provider=llama-cpp -m qwen3.6-35b-a3b $1 < /dev/null 2> /dev/null"; }
-          test "$(codex_llm secret-prompt)" = FAKE-ANSWER
+          test "$(su - agent -c 'local-llm -a secret-prompt < /dev/null')" = FAKE-ANSWER
           # vl_query <問い合わせ> <含むべき文字列>
           vl_query() { local r; r="$(curl -s http://127.0.0.1:9428/select/logsql/query --data-urlencode "query=$1")"; grep -qF -- "$2" <<< "${r}"; }
           for _ in $(seq 30); do vl_query '_msg:codex.user_prompt' '"prompt"' && break; sleep 1; done
@@ -371,7 +370,7 @@ jobs:
           # 監視が止まっていても、エージェントはすぐに終わる（pkill -f はこのスクリプト自体に一致するので、プロセス名で止める）
           pkill -x victoria-metric
           pkill -x victoria-logs
-          test "$(codex_llm hello)" = FAKE-ANSWER
+          test "$(su - agent -c 'timeout 30 local-llm -a hello < /dev/null')" = FAKE-ANSWER
           pkill -x node_exporter
           kill "$(cat /tmp/fake-llm.pid)"
 
