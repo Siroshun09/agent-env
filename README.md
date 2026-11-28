@@ -104,13 +104,15 @@ Host agent-box
 初回だけ、自宅で次を行います。
 1. Mac に Tailscale のアプリを入れてログインします。ログインに使うアカウント（Google、GitHub など）では、多要素認証を有効にしてください。この VPN の安全性は、このアカウントの安全性で決まります。
 2. `ssh -t agent-box sudo tailscale up` を実行し、表示された URL を開いて同じアカウントでログインします。
-3. Tailscale の管理画面（Machines）で `agent-box` の「Disable key expiry」を選びます。鍵の期限（既定は 180 日）が切れると、外出先からは PC に接続できなくなるためです。
+3. Tailscale の管理画面（Machines）で、`agent-box` に次の 2 つを行います。
+   - 「Edit machine name」で、推測しにくい名前に変えます（例: Mac で `echo "m$(openssl rand -hex 6)"` を実行して作った文字列）。以下ではこれを `<マシン名>` と書きます。HTTPS の証明書（[ブラウザだけで開く](#ブラウザだけで開くiphone-など)）を使うと、マシン名が公開の証明書ログに残るためです。管理画面で変えた名前は、PC のホスト名や `tailscale up` の設定とは別に保たれます。
+   - 「Disable key expiry」を選びます。鍵の期限（既定は 180 日）が切れると、外出先からは PC に接続できなくなるためです。
 4. `ssh -t agent-box sudo tailscale down` で切断します。
 5. Mac の `~/.ssh/config` に次を追加します。`HostKeyAlias` で、LAN 内の接続と同じホスト鍵の確認を使います。
    ```
    Host agent-box-remote
      # Tailscale のマシン名（MagicDNS）
-     HostName agent-box
+     HostName <マシン名>
      HostKeyAlias agent-box.local
      User owner
      LocalForward 8700 127.0.0.1:8700
@@ -125,8 +127,8 @@ Tailscale は、PC の SSH（公開鍵のみ）に届く経路を増やすだけ
 
 #### ブラウザだけで開く（iPhone など）
 SSH なしで、Tailscale のアプリを入れた端末（iPhone など）のブラウザから、[ブラウザで開く画面](#ブラウザで開く画面)を開けるようにもできます。初回だけ、自宅で次を行います。
-1. Tailscale の管理画面（DNS）で、MagicDNS と HTTPS Certificates を有効にします。証明書の発行により、マシン名と tailnet 名（`<名前>.ts.net`）が公開の証明書ログ（Certificate Transparency）に載ります。名前が知られるだけで、tailnet の外からは接続できません。
-2. PC を接続した状態（`sudo tailscale up` のあと）で `ssh -t agent-box sudo agent-env-tailnet-serve` を実行します。表示された `https://agent-box.<tailnet>.ts.net/` が一覧のページです。
+1. Tailscale の管理画面（DNS）で、MagicDNS と HTTPS Certificates を有効にします。証明書の発行により、マシン名と tailnet 名（`<名前>.ts.net`）が公開の証明書ログ（Certificate Transparency）に載り、あとから消せません。名前が知られるだけで、tailnet の外からは接続できませんが、マシン名は先に推測しにくい名前に変えておきます（初回の手順の 3）。tailnet 名も、管理画面（DNS）で自分で選んだ名前に変えている場合は、個人を連想させないか確認してください。
+2. PC を接続した状態（`sudo tailscale up` のあと）で `ssh -t agent-box sudo agent-env-tailnet-serve` を実行します。表示された `https://<マシン名>.<tailnet>.ts.net/` が一覧のページです。
    - `tailscale serve` で、画面ごとのポート（一覧 443、端末 8443、監視の概要 8444、ローカル LLM 8445、指標 8446、ログ 8447）をゲートウェイに中継します。ポートごとに別のオリジンになるので、画面どうしは `*.localhost` と同じく分けられます。
    - 設定は Tailscale に保存され、再起動しても残ります。公開されるのは PC が接続している間だけです。やめるときは `sudo tailscale serve reset` を実行します。
 3. iPhone などに Tailscale のアプリを入れ、同じアカウントでログインします。
