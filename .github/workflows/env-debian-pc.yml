@@ -263,6 +263,15 @@ jobs:
           vm_query() { local r; r="$(curl -s http://127.0.0.1:8428/api/v1/query --data-urlencode "query=$1")"; grep -qF -- "$2" <<< "${r}"; }
           for _ in $(seq 60); do vm_query 'up{job="node"} == 1' '"job":"node"' && break; sleep 1; done
           vm_query 'up{job="node"} == 1' '"job":"node"'
+          # vmui の Dashboards タブ: 定義が読まれ、どの問い合わせも文法が正しいこと
+          dash="$(curl -sf http://127.0.0.1:8428/vmui/custom-dashboards)"
+          test "$(jq -r '.dashboardsSettings[].title' <<< "${dash}")" = 概要
+          jq -r '.dashboardsSettings[].rows[].panels[].expr[]' <<< "${dash}" > /tmp/dash-exprs
+          test -s /tmp/dash-exprs
+          while IFS= read -r q; do
+            r="$(curl -s http://127.0.0.1:8428/api/v1/query_range --data-urlencode "query=${q}" -d start=-1h -d step=30s)"
+            jq -e '.status == "success"' <<< "${r}" > /dev/null || { echo "${q}: ${r}"; exit 1; }
+          done < /tmp/dash-exprs
           # 削除などの管理用 API は鍵が必要
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST 'http://127.0.0.1:8428/api/v1/admin/tsdb/delete_series?match[]=x')" = 401
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:8428/api/v1/admin/tsdb/delete_series?match[]=x&authKey=${key}")" = 204
