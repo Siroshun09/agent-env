@@ -274,36 +274,33 @@ else
 fi
 
 log "Mac のブラウザから接続するためのサービス"
-# エージェントの作業場所。OpenCode、ブラウザの端末のセッションはここで始まる。
+# エージェントの作業場所。ブラウザの端末のセッションはここで始まる。
 # agent ユーザーとして作る（root で agent のホーム以下を操作すると、agent が置いたシンボリックリンクを
 # たどって別の場所の所有者や権限を変えてしまうため）
 runuser -u "${AGENT_USER}" -- mkdir -p "/home/${AGENT_USER}/work"
-# OpenCode サーバーのパスワード（初回だけ生成する。確認: sudo cat /etc/agent-env/opencode-server.env）
 install -d -m 0755 /etc/agent-env
-if [[ ! -s /etc/agent-env/opencode-server.env ]]; then
-  (umask 077 && printf 'OPENCODE_PASSWORD=%s\n' "$(openssl rand -hex 16)" > /etc/agent-env/opencode-server.env)
-fi
-# ブラウザの端末のパスワード（同上。確認: sudo cat /etc/agent-env/terminal.env）
+# ブラウザの端末のパスワード（初回だけ生成する。確認: sudo cat /etc/agent-env/terminal.env）
 if [[ ! -s /etc/agent-env/terminal.env ]]; then
   (umask 077 && printf 'TERMINAL_PASSWORD=%s\n' "$(openssl rand -hex 16)" > /etc/agent-env/terminal.env)
 fi
-# 以前の版で入れていた Claude Code の Remote Control（使わなくなった）を止めて削除する
-for u in agent-env-claude-remote.path agent-env-claude-remote.service; do
+# 以前の版で入れていた Claude Code の Remote Control と OpenCode の Web UI（使わなくなった）を止めて削除する
+for u in agent-env-claude-remote.path agent-env-claude-remote.service agent-env-opencode.service; do
   if [[ -e "/etc/systemd/system/${u}" ]]; then
     if [[ -d /run/systemd/system ]]; then systemctl disable --now "${u}"; else systemctl disable "${u}"; fi
     rm -f "/etc/systemd/system/${u}"
   fi
 done
-UNITS=(agent-env-opencode.service agent-env-terminal.service)
+rm -f /etc/agent-env/opencode-server.env
+UNITS=(agent-env-terminal.service)
 for u in "${UNITS[@]}"; do
   install -m 0644 "${ENV_DIR}/system/${u}" /etc/systemd/system/
 done
-systemctl enable agent-env-opencode.service agent-env-terminal.service
+systemctl enable agent-env-terminal.service
 # systemd が動いている（コンテナでの検査ではない）なら、止まっていれば起動する。
 # 動作中のサービスは再起動しない（作業中のセッションを切らないため）。ユニットの変更は次の再起動で反映される
 if [[ -d /run/systemd/system ]]; then
   systemctl daemon-reload
-  systemctl start --no-block agent-env-opencode.service agent-env-terminal.service
+  systemctl start --no-block agent-env-terminal.service
 fi
 
 log "Debian の自動セキュリティ更新"
