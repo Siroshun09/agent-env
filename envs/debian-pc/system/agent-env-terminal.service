@@ -1,5 +1,5 @@
 # ブラウザで使う agent ユーザーの端末（ttyd + tmux）。claude や codex などの CLI をブラウザから使う。
-# PC 内（127.0.0.1）だけで待ち受け、Mac からはゲートウェイ（agent-env-gateway）を通して http://term.agent-box.localhost:8700 で開く。
+# PC 内（127.0.0.1）だけで待ち受け、Mac からはゲートウェイ（agent-env-gateway）を通して http://term.agent-box.localhost で開く。
 # パスワードは bootstrap.sh が生成する（/etc/agent-env/terminal.env。ユーザー名は agent）
 # 状況確認: journalctl -u agent-env-terminal
 [Unit]
