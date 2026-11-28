@@ -158,14 +158,8 @@ jobs:
             if git push -q origin main; then exit 1; fi
             grep -q " refs/heads/main " /tmp/hook.log && rm /tmp/hook.log
           '
-          # 以前の方式の認証情報は、bootstrap が削除する
-          su - agent -c 'git config --global credential.https://github.com.helper "" && git config --global --add credential.https://github.com.helper "!/usr/bin/gh auth git-credential"'
+          # bootstrap はもう一度実行しても成功する
           /src/envs/debian-pc/bootstrap.sh > /tmp/bootstrap-3.log 2>&1 || { cat /tmp/bootstrap-3.log; exit 1; }
-          su - agent -c '
-            set -eu
-            test ! -e ~/.config/gh/hosts.yml
-            test -z "$(git config --global --get-regexp "^credential\." || true)"
-          '
           # エージェントへの指示。OpenCode は instructions で同じファイルを読む。詳細のファイルを指していること
           cmp /src/envs/debian-pc/system/agents/instructions.md /etc/claude-code/CLAUDE.md
           cmp /src/envs/debian-pc/system/agents/local-llm.md /etc/agent-env/local-llm.md

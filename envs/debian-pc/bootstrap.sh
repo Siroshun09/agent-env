@@ -148,19 +148,6 @@ for h in applypatch-msg pre-applypatch post-applypatch pre-commit pre-merge-comm
   ln -s run-repo-hook "${hooks}/${h}"
 done
 git config --system core.hooksPath "${hooks}"
-# 以前の方式（gh auth login と gh auth setup-git）の認証情報を消す。残っていると、git のユーザー設定が
-# 上の helper を無効にしたり、gh が古いトークンを使ったりする。ファイルの操作は agent ユーザーとして行う
-agent_git() { runuser -u "${AGENT_USER}" -- env HOME="/home/${AGENT_USER}" git config --global "$@"; }
-for section in credential.https://github.com credential.https://gist.github.com; do
-  if agent_git --get-regexp "^${section//./\\.}\\." > /dev/null 2>&1; then
-    agent_git --remove-section "${section}"
-    log "  ${AGENT_USER} の git の設定から ${section} を削除しました"
-  fi
-done
-if [ -e "/home/${AGENT_USER}/.config/gh/hosts.yml" ]; then
-  runuser -u "${AGENT_USER}" -- rm -f "/home/${AGENT_USER}/.config/gh/hosts.yml"
-  log "  ${AGENT_USER} の gh の認証情報（~/.config/gh/hosts.yml）を削除しました"
-fi
 
 log "NVIDIA ドライバー（NVIDIA の GPU がある場合だけ）"
 # DKMS でビルドするオープン版のカーネルモジュールと、計算用（CUDA）のライブラリだけを入れる（画面表示用は入れない）。
@@ -255,8 +242,6 @@ if has_nvidia_gpu; then
     install -D -m 0644 "${ENV_DIR}/system/llama-models.ini" /etc/agent-env/llama-models.ini
     preset_changed=true
   fi
-  # 以前の方式（モデル 1 つ）の設定を消す
-  rm -f /etc/agent-env/llama-server.env
   install -m 0644 "${ENV_DIR}/system/agent-env-llama.service" /etc/systemd/system/
   systemctl enable agent-env-llama.service
   if [[ -d /run/systemd/system ]]; then
@@ -283,14 +268,6 @@ install -d -m 0755 /etc/agent-env
 if [[ ! -s /etc/agent-env/terminal.env ]]; then
   (umask 077 && printf 'TERMINAL_PASSWORD=%s\n' "$(openssl rand -hex 16)" > /etc/agent-env/terminal.env)
 fi
-# 以前の版で入れていた Claude Code の Remote Control と OpenCode の Web UI（使わなくなった）を止めて削除する
-for u in agent-env-claude-remote.path agent-env-claude-remote.service agent-env-opencode.service; do
-  if [[ -e "/etc/systemd/system/${u}" ]]; then
-    if [[ -d /run/systemd/system ]]; then systemctl disable --now "${u}"; else systemctl disable "${u}"; fi
-    rm -f "/etc/systemd/system/${u}"
-  fi
-done
-rm -f /etc/agent-env/opencode-server.env
 UNITS=(agent-env-terminal.service)
 for u in "${UNITS[@]}"; do
   install -m 0644 "${ENV_DIR}/system/${u}" /etc/systemd/system/
