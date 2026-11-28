@@ -40,17 +40,8 @@ type site struct {
 	scheme  string // オリジンのスキーム（ブラウザが送る Origin と比べる）
 }
 
-// tailnet は、tailnet（Tailscale）から開くための設定
-type tailnet struct {
-	host     string // この PC のホスト名（例: agent-box.example.ts.net）。空なら tailnet からは開けない
-	password string // Basic 認証のパスワード（ユーザー名は agent。ブラウザの端末と同じ）
-}
-
-// newHandler は、ホスト名ごとに振り分けるハンドラーを返す。
-// ホスト名ごとに別のオリジンになるので、ある画面の不具合（XSS など）が、ほかの画面（端末など）に及ばない。
-// tn.host が空でなければ、tailscale serve から届く https://<tn.host>:<ポート> でも開けるようにする。
-// tailnet からは、どの画面にも Basic 認証を求める（SSH の転送で届く *.localhost は、SSH の認証で足りるので求めない）
-func newHandler(up upstreams, tn tailnet) http.Handler {
+// screens は、画面の名前（"" は一覧のページ）ごとのハンドラーを返す
+func screens(up upstreams) map[string]http.Handler {
 	metrics := newProxy(up.metrics)
 
 	index := http.NewServeMux()
@@ -62,7 +53,7 @@ func newHandler(up upstreams, tn tailnet) http.Handler {
 	dash.Handle("GET /api/v1/query", metrics)
 	dash.Handle("GET /api/v1/query_range", metrics)
 
-	screens := map[string]http.Handler{
+	return map[string]http.Handler{
 		"":        index,
 		"dash":    dash,
 		"term":    newProxy(up.term),
@@ -70,18 +61,46 @@ func newHandler(up upstreams, tn tailnet) http.Handler {
 		"metrics": metrics,
 		"logs":    newProxy(up.logs),
 	}
+}
+
+// newHandler は、SSH の転送で届くリクエスト（http://<名前>.agent-box.localhost）を、ホスト名で振り分けるハンドラーを返す。
+// ホスト名ごとに別のオリジンになるので、ある画面の不具合（XSS など）が、ほかの画面（端末など）に及ばない。
+// SSH の認証を通ったリクエストなので、Basic 認証は求めない
+func newHandler(up upstreams) http.Handler {
 	sites := map[string]site{}
-	for name, h := range screens {
+	for name, h := range screens(up) {
 		host := domain
 		if name != "" {
 			host = name + "." + domain
 		}
 		sites[host] = site{h, "http"}
-		if tn.host != "" {
-			sites[net.JoinHostPort(hostname(tn.host), tailnetPorts[name])] = site{basicAuth(h, "agent", tn.password), "https"}
-		}
 	}
-	return guard(sites)
+	return rejectProxied(guard(sites))
+}
+
+// newTailnetHandler は、tailscale serve が中継するリクエスト（https://<host>:<ポート>）を、ポートで振り分けるハンドラーを返す。
+// tailscale serve で使えるホスト名は 1 台に 1 つなので、ポートで別のオリジンにする。
+// tailnet から届くリクエストには、ホスト名を確認する前に、必ず Basic 認証を求める。
+// tailscale serve は Host ヘッダーを確かめずに中継するので、Host を *.localhost にしても認証は省けない
+func newTailnetHandler(up upstreams, host, password string) http.Handler {
+	sites := map[string]site{}
+	for name, h := range screens(up) {
+		sites[net.JoinHostPort(hostname(host), tailnetPorts[name])] = site{h, "https"}
+	}
+	return basicAuth(guard(sites), "agent", password)
+}
+
+// rejectProxied は、tailscale serve が中継したリクエスト（X-Forwarded-Host がある）を拒否する。
+// SSH の転送の入口には届かない設定だが、tailscale serve の中継先を誤ってこの入口にしても、
+// tailnet から認証なしで開けないようにする
+func rejectProxied(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Forwarded-Host") != "" {
+			http.Error(w, "proxied request", http.StatusForbidden)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 // guard は、次のリクエストを拒否してから、ホスト名に対応するハンドラーに渡す。

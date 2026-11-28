@@ -23,12 +23,19 @@ const (
 	tailnetPassword = "secret"
 )
 
-// withTailnetAuth は、host が tailnet のホスト名なら、header に正しい Basic 認証を加えて返す
-func withTailnetAuth(host string, header map[string]string) map[string]string {
-	if !strings.Contains(host, ".ts.net") {
-		return header
-	}
-	h := map[string]string{"Authorization": "Basic " + base64.StdEncoding.EncodeToString([]byte("agent:"+tailnetPassword))}
+// basic は Basic 認証の Authorization ヘッダーを返す
+func basic(user, password string) map[string]string {
+	return map[string]string{"Authorization": "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password))}
+}
+
+// isTailnet は、host が tailnet のホスト名なら true を返す（テーブルのテストで、送る入口を選ぶ）
+func isTailnet(host string) bool {
+	return strings.Contains(host, ".ts.net")
+}
+
+// withTailnetAuth は、header に正しい Basic 認証を加えて返す
+func withTailnetAuth(header map[string]string) map[string]string {
+	h := basic("agent", tailnetPassword)
 	for k, v := range header {
 		h[k] = v
 	}
@@ -56,19 +63,32 @@ func echo(name string) http.HandlerFunc {
 	}
 }
 
-// startGateway は、すべての振り分け先を up にしたゲートウェイを立てる。up が nil なら、名前を返す echo にする
+// testUpstreams は、すべての振り分け先を up にする。up が nil なら、名前を返す echo にする
+func testUpstreams(t *testing.T, up *url.URL) upstreams {
+	t.Helper()
+	if up != nil {
+		return upstreams{term: up, llm: up, metrics: up, logs: up}
+	}
+	return upstreams{
+		term:    startUpstream(t, echo("term")),
+		llm:     startUpstream(t, echo("llm")),
+		metrics: startUpstream(t, echo("metrics")),
+		logs:    startUpstream(t, echo("logs")),
+	}
+}
+
+// startGateway は、SSH の転送の入口を立てる
 func startGateway(t *testing.T, up *url.URL) *httptest.Server {
 	t.Helper()
-	ups := upstreams{term: up, llm: up, metrics: up, logs: up}
-	if up == nil {
-		ups = upstreams{
-			term:    startUpstream(t, echo("term")),
-			llm:     startUpstream(t, echo("llm")),
-			metrics: startUpstream(t, echo("metrics")),
-			logs:    startUpstream(t, echo("logs")),
-		}
-	}
-	gw := httptest.NewServer(newHandler(ups, tailnet{tailnetHost, tailnetPassword}))
+	gw := httptest.NewServer(newHandler(testUpstreams(t, up)))
+	t.Cleanup(gw.Close)
+	return gw
+}
+
+// startTailnetGateway は、tailnet の入口を立てる
+func startTailnetGateway(t *testing.T, up *url.URL, password string) *httptest.Server {
+	t.Helper()
+	gw := httptest.NewServer(newTailnetHandler(testUpstreams(t, up), tailnetHost, password))
 	t.Cleanup(gw.Close)
 	return gw
 }
@@ -96,7 +116,7 @@ func get(t *testing.T, gw *httptest.Server, method, host, path string, header ma
 }
 
 func TestRouting(t *testing.T) {
-	gw := startGateway(t, nil)
+	local, tn := startGateway(t, nil), startTailnetGateway(t, nil, tailnetPassword)
 	tests := []struct {
 		method, host, path string
 		wantCode           int
@@ -122,7 +142,7 @@ func TestRouting(t *testing.T) {
 		{"GET", "term.agent-box.localhost.evil.example:8700", "/", 421, ""},
 		{"GET", "127.0.0.1:8700", "/", 421, ""},
 		{"GET", "", "/", 421, ""},
-		// tailnet（tailscale serve から）。画面はポートで選ぶ
+		// tailnet の入口（tailscale serve から、正しい認証付き）。画面はポートで選ぶ
 		{"GET", "agent-box.example.ts.net", "/", 200, "<title>agent-box</title>"},
 		{"GET", "AGENT-BOX.example.ts.net:443", "/", 200, "<title>agent-box</title>"},
 		{"GET", "agent-box.example.ts.net:8443", "/ws", 200, "term host=agent-box.example.ts.net:8443 path=/ws"},
@@ -136,7 +156,11 @@ func TestRouting(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.host+tt.path, func(t *testing.T) {
-			res, body := get(t, gw, tt.method, tt.host, tt.path, withTailnetAuth(tt.host, nil))
+			gw, header := local, map[string]string(nil)
+			if isTailnet(tt.host) {
+				gw, header = tn, withTailnetAuth(nil)
+			}
+			res, body := get(t, gw, tt.method, tt.host, tt.path, header)
 			if res.StatusCode != tt.wantCode || !strings.Contains(body, tt.wantBody) {
 				t.Errorf("got %d %q, want %d containing %q", res.StatusCode, body, tt.wantCode, tt.wantBody)
 			}
@@ -169,7 +193,7 @@ func TestHeaders(t *testing.T) {
 }
 
 func TestCrossOrigin(t *testing.T) {
-	gw := startGateway(t, nil)
+	local, tn := startGateway(t, nil), startTailnetGateway(t, nil, tailnetPassword)
 	tests := []struct {
 		name         string
 		method, host string
@@ -217,7 +241,11 @@ func TestCrossOrigin(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if res, body := get(t, gw, tt.method, tt.host, "/x", withTailnetAuth(tt.host, tt.header)); res.StatusCode != tt.wantCode {
+			gw, header := local, tt.header
+			if isTailnet(tt.host) {
+				gw, header = tn, withTailnetAuth(tt.header)
+			}
+			if res, body := get(t, gw, tt.method, tt.host, "/x", header); res.StatusCode != tt.wantCode {
 				t.Errorf("got %d %q, want %d", res.StatusCode, body, tt.wantCode)
 			}
 		})
@@ -334,12 +362,9 @@ func TestWebSocket(t *testing.T) {
 	})
 }
 
-// tailnet からは、どの画面にも Basic 認証を求める。*.localhost（SSH の転送）では求めない
+// tailnet の入口では、Host ヘッダーに関係なく、どのリクエストにも Basic 認証を求める
 func TestTailnetAuth(t *testing.T) {
-	gw := startGateway(t, nil)
-	basic := func(user, password string) map[string]string {
-		return map[string]string{"Authorization": "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password))}
-	}
+	gw := startTailnetGateway(t, nil, tailnetPassword)
 	tests := []struct {
 		name     string
 		host     string
@@ -350,8 +375,14 @@ func TestTailnetAuth(t *testing.T) {
 		{"認証なし（指標）", "agent-box.example.ts.net:8446", nil, 401},
 		{"パスワードが違う", "agent-box.example.ts.net:8446", basic("agent", "wrong"), 401},
 		{"ユーザー名が違う", "agent-box.example.ts.net:8446", basic("owner", tailnetPassword), 401},
+		{"Basic 以外の認証", "agent-box.example.ts.net:8446", map[string]string{"Authorization": "Bearer " + tailnetPassword}, 401},
 		{"正しい認証", "agent-box.example.ts.net:8446", basic("agent", tailnetPassword), 200},
-		{"*.localhost は認証なしで開ける", "metrics.agent-box.localhost:8700", nil, 200},
+		// tailscale serve は Host ヘッダーを確かめずに中継するので、*.localhost や知らないホスト名でも認証を求める
+		{"Host が *.localhost（認証なし）", "metrics.agent-box.localhost:8700", nil, 401},
+		{"Host が *.localhost（ポートなし、認証なし）", "metrics.agent-box.localhost", nil, 401},
+		{"Host が *.localhost（正しい認証）", "metrics.agent-box.localhost", basic("agent", tailnetPassword), 421},
+		{"Host が空（認証なし）", "", nil, 401},
+		{"知らないホスト名（認証なし）", "evil.example", nil, 401},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -372,26 +403,28 @@ func TestTailnetAuth(t *testing.T) {
 	}
 }
 
-// パスワードが空なら、tailnet からは誰も通さない
+// パスワードが空なら、tailnet の入口は誰も通さない
 func TestTailnetEmptyPassword(t *testing.T) {
-	up := startUpstream(t, echo("term"))
-	gw := httptest.NewServer(newHandler(upstreams{term: up, llm: up, metrics: up, logs: up}, tailnet{host: tailnetHost}))
-	t.Cleanup(gw.Close)
-	res, _ := get(t, gw, "GET", tailnetHost, "/", map[string]string{"Authorization": "Basic " + base64.StdEncoding.EncodeToString([]byte("agent:"))})
-	if res.StatusCode != http.StatusUnauthorized {
-		t.Errorf("got %d, want 401", res.StatusCode)
+	gw := startTailnetGateway(t, nil, "")
+	for _, header := range []map[string]string{nil, basic("agent", "")} {
+		if res, _ := get(t, gw, "GET", tailnetHost, "/", header); res.StatusCode != http.StatusUnauthorized {
+			t.Errorf("%v: got %d, want 401", header, res.StatusCode)
+		}
 	}
 }
 
-// tailnet から開かない設定（tailnetHost が空）では、tailnet のホスト名を拒否する
-func TestNoTailnet(t *testing.T) {
-	up := startUpstream(t, echo("term"))
-	gw := httptest.NewServer(newHandler(upstreams{term: up, llm: up, metrics: up, logs: up}, tailnet{}))
-	t.Cleanup(gw.Close)
-	for _, host := range []string{"agent-box.example.ts.net", ":443", ":8443"} {
-		if res, _ := get(t, gw, "GET", host, "/", nil); res.StatusCode != http.StatusMisdirectedRequest {
+// SSH の転送の入口では、tailnet のホスト名と、tailscale serve が中継したリクエストを拒否する
+func TestLocalRejectsTailnet(t *testing.T) {
+	gw := startGateway(t, nil)
+	for _, host := range []string{"agent-box.example.ts.net", "agent-box.example.ts.net:8446"} {
+		if res, _ := get(t, gw, "GET", host, "/", basic("agent", tailnetPassword)); res.StatusCode != http.StatusMisdirectedRequest {
 			t.Errorf("%s: got %d, want 421", host, res.StatusCode)
 		}
+	}
+	// tailscale serve の中継先を誤ってこの入口にした場合（tailscale serve は X-Forwarded-Host を必ず付ける）
+	res, _ := get(t, gw, "GET", "metrics.agent-box.localhost", "/vmui/", map[string]string{"X-Forwarded-Host": "metrics.agent-box.localhost"})
+	if res.StatusCode != http.StatusForbidden {
+		t.Errorf("proxied: got %d, want 403", res.StatusCode)
 	}
 }
 

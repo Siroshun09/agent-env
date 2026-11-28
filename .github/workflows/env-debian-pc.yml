@@ -316,12 +316,17 @@ jobs:
           test "$(gw_code agent-box.localhost:8700 /)" = 200
           test "$(gw_code dash.agent-box.localhost:8700 /)" = 200
           test "$(gw_code evil.example:8700 /)" = 421
-          # tailnet（tailscale serve から）では、画面をポートで選び、どの画面にも Basic 認証を求める
-          test "$(gw_code agent-box.example.ts.net / -u "agent:${TERMINAL_PASSWORD}")" = 200
-          test "$(gw_code agent-box.example.ts.net:8444 / -u "agent:${TERMINAL_PASSWORD}")" = 200
-          test "$(gw_code agent-box.example.ts.net:8444 /)" = 401
-          test "$(gw_code agent-box.example.ts.net:8444 / -u agent:wrong)" = 401
-          test "$(gw_code agent-box.example.ts.net:9999 /)" = 421
+          # tailnet の入口（tailscale serve の中継先）: 画面をポートで選び、Host に関係なく、どのリクエストにも Basic 認証を求める
+          tn_code() { local host="$1" path="$2"; shift 2; curl -s -o /dev/null -w '%{http_code}' -H "Host: ${host}" "$@" "http://127.0.0.1:8701${path}"; }
+          test "$(tn_code agent-box.example.ts.net / -u "agent:${TERMINAL_PASSWORD}")" = 200
+          test "$(tn_code agent-box.example.ts.net:8444 / -u "agent:${TERMINAL_PASSWORD}")" = 200
+          test "$(tn_code agent-box.example.ts.net:8444 /)" = 401
+          test "$(tn_code agent-box.example.ts.net:8444 / -u agent:wrong)" = 401
+          test "$(tn_code agent-box.example.ts.net:9999 / -u "agent:${TERMINAL_PASSWORD}")" = 421
+          test "$(tn_code dash.agent-box.localhost:8700 /)" = 401
+          # SSH の転送の入口は、tailnet のホスト名と、tailscale serve が中継したリクエストを拒否する
+          test "$(gw_code agent-box.example.ts.net:8444 /)" = 421
+          test "$(gw_code dash.agent-box.localhost:8700 / -H 'X-Forwarded-Host: dash.agent-box.localhost')" = 403
           test "$(gw_code dash.agent-box.localhost:8700 '/api/v1/query?query=up' -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: cors')" = 403
           test "$(gw_code dash.agent-box.localhost:8700 '/api/v1/admin/tsdb/delete_series?match[]=x')" = 404
           # 概要ページ（dashboard.html）: どの問い合わせも文法が正しいこと（ゲートウェイ経由で問い合わせる）
@@ -400,7 +405,7 @@ jobs:
           # ゲートウェイ経由でも同じ（Basic 認証はそのまま届く）
           test "$(gw_code term.agent-box.localhost:8700 /)" = 401
           test "$(gw_code term.agent-box.localhost:8700 / -u "agent:${TERMINAL_PASSWORD}")" = 200
-          test "$(gw_code agent-box.example.ts.net:8443 / -u "agent:${TERMINAL_PASSWORD}")" = 200
+          test "$(tn_code agent-box.example.ts.net:8443 / -u "agent:${TERMINAL_PASSWORD}")" = 200
           # ビルドに使った Go を記録している（Go かソースが変わったときだけビルドし直すため）
           grep -q "^$(sed -n 's/^GO_SHA256=//p' /src/envs/debian-pc/tools.conf) " /usr/local/lib/agent-env/agent-env-gateway.stamp
 
