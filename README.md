@@ -98,6 +98,31 @@ Host agent-box
 ```
 再インストールすると SSH のホスト鍵が変わります。`ssh-keygen -R agent-box.local` で古い鍵を削除し、初回接続時に表示される fingerprint が、PC のログイン画面に表示される `SSH host key:` と一致することを確認してください。
 
+### 外出先からの接続（Tailscale）
+外出先からは [Tailscale](https://tailscale.com/)（WireGuard の VPN）を経由して SSH します。PC 側でポートを開ける必要はありません。普段は PC と Mac の両方で切断しておき、使うときだけ手動で接続します。接続・切断の状態は、PC を再起動しても保たれます。
+
+初回だけ、自宅で次を行います。
+1. Mac に Tailscale のアプリを入れてログインします。ログインに使うアカウント（Google、GitHub など）では、多要素認証を有効にしてください。この VPN の安全性は、このアカウントの安全性で決まります。
+2. `ssh -t agent-box sudo tailscale up` を実行し、表示された URL を開いて同じアカウントでログインします。
+3. Tailscale の管理画面（Machines）で `agent-box` の「Disable key expiry」を選びます。鍵の期限（既定は 180 日）が切れると、外出先からは PC に接続できなくなるためです。
+4. `ssh -t agent-box sudo tailscale down` で切断します。
+5. Mac の `~/.ssh/config` に次を追加します。`HostKeyAlias` で、LAN 内の接続と同じホスト鍵の確認を使います。
+   ```
+   Host agent-box-remote
+     # Tailscale のマシン名（MagicDNS）
+     HostName agent-box
+     HostKeyAlias agent-box.local
+     User owner
+     LocalForward 8700 127.0.0.1:8700
+   ```
+
+使うときは次のようにします。
+- 外出前に、`ssh -t agent-box sudo tailscale up` で PC を接続します。PC が切断されていると、外出先からは接続できません。
+- 外出先では、Mac のメニューバーの Tailscale で Connect を選び、`ssh agent-box-remote` で接続します（ブラウザで開く画面も、`agent-box` と同じように使えます）。
+- 帰宅後に、`ssh -t agent-box sudo tailscale down` と、Mac での Disconnect で切断します。
+
+Tailscale は、PC の SSH（公開鍵のみ）に届く経路を増やすだけで、SSH の認証は変わりません。Tailscale の更新は、Debian と同じく自動で適用します。
+
 ### ブラウザで開く画面
 `ssh -N agent-box` を実行したまま、Mac のブラウザで http://agent-box.localhost を開くと、PC 内の画面の一覧が表示されます。
 
@@ -168,7 +193,7 @@ NVIDIA の GPU がある PC では、llama.cpp の `llama-server` がサービ�
 ### Debian とツールの更新（自動）
 セキュリティ更新などは `unattended-upgrades` が毎日自動で適用します。再起動が必要な場合は 04:30 に自動で再起動しますが、ログイン中のユーザーがいるときは再起動しません。その場合は `/run/reboot-required` が残るので、作業の区切りで `sudo reboot` してください。
 
-Claude Code（公式 apt リポジトリの stable チャンネル）と mise の更新も、同じ仕組みで毎日自動で適用します。NVIDIA ドライバーは自動更新の対象外で、ブランチを `bootstrap.sh` の `nvidia-driver-pinning-*` で固定しています。カーネルが更新されたときは DKMS が同じ鍵でモジュールを作り直すので、MOK の登録はやり直す必要がありません。ttyd、llama.cpp、監視のツール、Go のバージョンは `tools.conf` で固定していて、Renovate の更新 PR を `main` にマージしたあと、次の「このリポジトリの変更」の手順で反映します。
+Claude Code（公式 apt リポジトリの stable チャンネル）、mise、Tailscale の更新も、同じ仕組みで毎日自動で適用します。NVIDIA ドライバーは自動更新の対象外で、ブランチを `bootstrap.sh` の `nvidia-driver-pinning-*` で固定しています。カーネルが更新されたときは DKMS が同じ鍵でモジュールを作り直すので、MOK の登録はやり直す必要がありません。ttyd、llama.cpp、監視のツール、Go のバージョンは `tools.conf` で固定していて、Renovate の更新 PR を `main` にマージしたあと、次の「このリポジトリの変更」の手順で反映します。
 
 ### このリポジトリの変更（手動）
 `main` にマージしただけでは PC は変わりません。PC に反映するには、管理者が次を実行します。

@@ -32,5 +32,7 @@ passt
 # Mac などからのリモート管理（ssh owner@agent-box.local）
 openssh-server
 avahi-daemon
+# 外出先からの SSH（普段は切断しておき、使うときだけ管理者が接続する）
+tailscale
 # Debian のセキュリティ更新の自動適用
 unattended-upgrades

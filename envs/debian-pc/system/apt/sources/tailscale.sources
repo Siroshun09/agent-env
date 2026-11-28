@@ -1,0 +1,8 @@
+# Tailscale（外出先からの SSH 用。使うときだけ管理者が sudo tailscale up で接続する）
+# 鍵の fingerprint: 2596A99EAAB33821893C0A79458CA832957F5868
+#   （https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg から取り出し、InRelease の署名がこの鍵で検証できることを確認）
+Types: deb
+URIs: https://pkgs.tailscale.com/stable/debian
+Suites: trixie
+Components: main
+Signed-By: /etc/apt/keyrings/tailscale.asc
