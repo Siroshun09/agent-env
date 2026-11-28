@@ -105,7 +105,7 @@ Host agent-box
 1. Mac に Tailscale のアプリを入れてログインします。ログインに使うアカウント（Google、GitHub など）では、多要素認証を有効にしてください。この VPN の安全性は、このアカウントの安全性で決まります。
 2. `ssh -t agent-box sudo tailscale up` を実行し、表示された URL を開いて同じアカウントでログインします。
 3. Tailscale の管理画面（Machines）で、`agent-box` に次の 2 つを行います。
-   - 「Edit machine name」で、推測しにくい名前（ランダムな英数字など。この README の例をそのまま使わない）に変えます。以下ではこれを `<マシン名>` と書きます。HTTPS の証明書（[ブラウザだけで開く](#ブラウザだけで開くiphone-など)）を使うと、マシン名が公開の証明書ログに残るためです。管理画面で変えた名前は、PC のホスト名や `tailscale up` の設定とは別に保たれます。
+   - 「Edit machine name」で、推測しにくい名前に変えます（例: Mac で `echo "m$(openssl rand -hex 6)"` を実行して作った文字列）。以下ではこれを `<マシン名>` と書きます。HTTPS の証明書（[ブラウザだけで開く](#ブラウザだけで開くiphone-など)）を使うと、マシン名が公開の証明書ログに残るためです。管理画面で変えた名前は、PC のホスト名や `tailscale up` の設定とは別に保たれます。
    - 「Disable key expiry」を選びます。鍵の期限（既定は 180 日）が切れると、外出先からは PC に接続できなくなるためです。
 4. `ssh -t agent-box sudo tailscale down` で切断します。
 5. Mac の `~/.ssh/config` に次を追加します。`HostKeyAlias` で、LAN 内の接続と同じホスト鍵の確認を使います。
