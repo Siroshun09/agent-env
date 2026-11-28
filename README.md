@@ -10,7 +10,7 @@
 | OS のインストールとパーティション | 秘密情報（Claude のログイン、ChatGPT のサインイン、GitHub のトークン） |
 | ユーザーの分離（人間用の `owner` / エージェント用の `agent`） | エージェントが作業中のリポジトリ |
 | パッケージと podman、OS の更新設定 | |
-| エージェントのツール（Claude Code、OpenCode、Codex、mise、gh）と、その管理者用の設定 | |
+| エージェントのツール（Claude Code、Codex、mise、gh）と、その管理者用の設定 | |
 | NVIDIA ドライバーとローカル LLM（llama.cpp とモデル） | |
 
 `agent` には sudo 権限がありません。エージェントのツールに apt パッケージが必要な場合は、`envs/debian-pc/packages.txt` に追加してください。言語ツールは各プロジェクトの `mise.toml` で管理します。Java、Go、pnpm はグローバルに入れていて、バージョンは `envs/debian-pc/system/mise/config.toml` で固定し、Renovate が更新します。
@@ -18,7 +18,7 @@
 ## 方針
 - PC は使い捨てにし、状態はリポジトリと外部に置きます。作り直すときは ISO から再インストールするだけです。
 - 人間用ユーザーとエージェント用ユーザーを分け、エージェントには sudo 権限を与えません。
-- エージェントのツールの設定のうち、エージェント自身に変えられたくないもの（OpenCode で使えるモデル提供元など）は、root 所有の管理者用の設定に置きます。管理者用の設定は、ユーザーやプロジェクトの設定より優先されます。
+- エージェントのツールの設定のうち、エージェント自身に変えられたくないもの（Codex のサンドボックスの権限など）は、root 所有の管理者用の設定に置きます。管理者用の設定は、ユーザーやプロジェクトの設定より優先されます。
 - 秘密情報はリポジトリに入れません。ISO にはパスワードのハッシュ、SSH 公開鍵、MOK の登録用のパスワード（インストール直後に 1 回だけ使う数字 8 桁）が入るため、CI でも ISO は公開しません。
 
 ## 構成
@@ -34,7 +34,7 @@ envs/debian-pc/                Debian 13 の実 PC
   bootstrap.sh                 PC をセットアップする（冪等）
   apply.sh                     main の変更を、確認・承認したうえで PC に反映する
   packages.txt                 インストールするパッケージ
-  tools.conf                   apt で入らないツール（OpenCode、ttyd、llama.cpp）とローカル LLM のモデルのバージョンとハッシュ
+  tools.conf                   apt で入らないツール（ttyd、llama.cpp）とローカル LLM のモデルのバージョンとハッシュ
   system/                      systemd ユニット、apt の設定とリポジトリ、エージェントのツールの管理者用の設定、GitHub のトークンの使い分けと git のフック
 .github/workflows/             CI（静的検査、ISO のビルド、bootstrap と apply.sh のテスト）
 ```
@@ -61,7 +61,7 @@ envs/debian-pc/                Debian 13 の実 PC
 7. エージェントの認証をします（初回のみ）。手順は「エージェントの準備」を参照してください。
 
 ## エージェントの準備
-初回セットアップが終わると、Claude Code（`claude`）、OpenCode（`opencode`）、Codex（`codex`、mise で入れる）、mise、gh が入っています。認証情報はリポジトリにも ISO にも入らないので、最初に一度だけ手で設定します。
+初回セットアップが終わると、Claude Code（`claude`）、Codex（`codex`、mise で入れる）、mise、gh が入っています。認証情報はリポジトリにも ISO にも入らないので、最初に一度だけ手で設定します。
 
 ```bash
 ssh -t agent-box sudo -iu agent
@@ -69,7 +69,6 @@ ssh -t agent-box sudo -iu agent
 
 `agent` ユーザーで次を実行します。
 - Claude Code: `cd ~/work && claude` を起動してログインします。表示された URL を Mac のブラウザで開いて認証します。続けて表示される `~/work` を信頼するかの確認で、信頼を選びます。
-- OpenCode: `opencode` を起動し、`/connect` で OpenAI を選んで ChatGPT のプランでサインインします。管理者用の設定で、OpenAI とローカル LLM 以外のモデル提供元は使えないようにしています。
 - Codex: `codex login --device-auth` で ChatGPT のプランでサインインします（ブラウザの無い PC なので、表示されたコードを Mac のブラウザで入力します）。サンドボックスは管理者用の設定の権限プロファイル `agent-env`（既定）で、作業中のリポジトリに加えてビルドツールのキャッシュ（`~/.gradle`、`~/.m2`、`~/go`、`~/.cache` など）への書き込みと、外向きの通信を許可しています。
 - GitHub: [fine-grained personal access token](https://github.com/settings/personal-access-tokens) を、リポジトリの持ち主（個人と各 org）ごとに 1 枚ずつ発行し、`agent-env-github-token set <持ち主>` で保存します（トークンを貼り付け、Enter と Ctrl+D）。fine-grained PAT は 1 枚で 1 つの持ち主のリポジトリにしか使えないためです。
   - トークンは対象のリポジトリに限定し、権限は Contents と Pull requests の Read and write だけにして、有効期限を付けてください。org のトークンは、org の設定で fine-grained PAT が許可されている必要があります（管理者の承認が必要な場合もあります）。`main` へのマージはブランチ保護で防ぎます。
@@ -82,7 +81,7 @@ ssh -t agent-box sudo -iu agent
     - リポジトリの設定で `core.hooksPath` を変えている場合（husky など）は、このフックは動きません。
   - 保存済みのトークンの一覧は `agent-env-github-token list`、削除は `agent-env-github-token remove <持ち主>` です。トークンは `~/.config/agent-env/github-tokens/` に保存されます（`agent` ユーザーだけが読めます）。
 
-エージェントのツールの管理者用の設定（`envs/debian-pc/system/claude-code/`、`envs/debian-pc/system/opencode/`、`envs/debian-pc/system/codex/`）は、bootstrap が `/etc/claude-code/`、`/etc/opencode/`、`/etc/codex/` に配置します。`agent` ユーザーの設定では上書きできません。
+エージェントのツールの管理者用の設定（`envs/debian-pc/system/claude-code/`、`envs/debian-pc/system/codex/`）は、bootstrap が `/etc/claude-code/`、`/etc/codex/` に配置します。`agent` ユーザーの設定では上書きできません。
 
 提供元への利用状況などの送信は止めています。Claude Code は利用状況・エラー報告・フィードバック・満足度調査、Codex は利用状況の分析（analytics）とフィードバックのアップロードです。Claude Code は利用状況の送信を止めると機能フラグも取得しなくなるので、機能フラグが必要な機能（Remote Control など）は使えません。
 
@@ -104,7 +103,7 @@ PC が起動すると、次のサービスが起動します。「エージェ�
 
 | | 使い方 | 仕組み |
 |---|---|---|
-| ブラウザの端末（Claude Code、Codex、OpenCode など） | `ssh -N agent-box` を実行したまま、ブラウザで http://localhost:7681 を開きます。ユーザー名は `agent`、パスワードは `ssh agent-box sudo cat /etc/agent-env/terminal.env` で確認します。`claude`、`codex`、`opencode` をそのまま起動できます | ttyd と tmux（`agent-env-terminal.service`）。ブラウザを閉じても作業は続き、開き直すと同じ画面に戻ります。PC 内（127.0.0.1）だけで待ち受け、SSH で転送します |
+| ブラウザの端末（Claude Code、Codex など） | `ssh -N agent-box` を実行したまま、ブラウザで http://localhost:7681 を開きます。ユーザー名は `agent`、パスワードは `ssh agent-box sudo cat /etc/agent-env/terminal.env` で確認します。`claude`、`codex` をそのまま起動できます | ttyd と tmux（`agent-env-terminal.service`）。ブラウザを閉じても作業は続き、開き直すと同じ画面に戻ります。PC 内（127.0.0.1）だけで待ち受け、SSH で転送します |
 
 どのセッションも `agent` ユーザーの `~/work` で始まります。ブラウザの端末の tmux と bash は、[dotfiles](https://github.com/Siroshun09/dotfiles) の `.tmux.conf` と `.bashrc` を使います（bootstrap が `~/dotfiles` に clone して最新にし、シンボリックリンクを張ります。動作中の tmux には `tmux source ~/.tmux.conf` で反映します）。リポジトリの clone や worktree の作成はエージェントに任せます。
 
@@ -121,18 +120,18 @@ NVIDIA の GPU がある PC では、llama.cpp の `llama-server` がサービ�
   | `qwen3-embedding-0.6b` | 埋め込み（`/v1/embeddings`） | Qwen3-Embedding-0.6B（約 0.6GB）。CPU だけで動かします |
 
 - llama-server はルーターモードで動き、リクエストの `"model"` で指定されたモデルを必要になった時点で読み込みます（同時に 2 つまで）。初回の呼び出しは読み込みの分だけ遅くなります。
-- OpenCode からは、モデル `llama-cpp/qwen3.6-35b-a3b` として使えます（管理者用の設定で登録済み。画像も渡せます）。Codex からは `codex -c model_provider=llama-cpp -m qwen3.6-35b-a3b` で使えます（Responses API で接続します）。スクリプトなどからは `http://127.0.0.1:8080/v1` を直接呼び、`"model"` にモデル名を指定します。
+- Codex からは `codex -c model_provider=llama-cpp -m qwen3.6-35b-a3b` で使えます（Responses API で接続します）。`claude -p` のように一度だけ実行するときは `codex exec -c model_provider=llama-cpp -m qwen3.6-35b-a3b "…"` を使います。スクリプトなどからは `http://127.0.0.1:8080/v1` を直接呼び、`"model"` にモデル名を指定します。
 - Mac からは、`ssh -N agent-box` を実行したまま http://localhost:8080 を開くとチャット画面を使えます。
-- Claude Code、OpenCode、Codex には、ローカル LLM を使う場面を指示しています（`envs/debian-pc/system/agents/instructions.md`）。外に出したくないデータの処理、大量のテキストの下処理、意味での検索などで使い、コードの設計や実装など品質が重要な作業には使いません。Claude Code は管理者用の CLAUDE.md（`/etc/claude-code/CLAUDE.md`）として、OpenCode は `instructions` として、Codex は管理者用の設定の `developer_instructions` として読みます。
+- Claude Code と Codex には、ローカル LLM を使う場面を指示しています（`envs/debian-pc/system/agents/instructions.md`）。外に出したくないデータの処理、大量のテキストの下処理、意味での検索などで使い、コードの設計や実装など品質が重要な作業には使いません。Claude Code は管理者用の CLAUDE.md（`/etc/claude-code/CLAUDE.md`）として、Codex は管理者用の設定の `developer_instructions` として読みます。
   - この指示は毎回のリクエストに含まれるので短くしています。呼び出し方の詳細（`agents/local-llm.md`、PC では `/etc/agent-env/local-llm.md`）は、使うときにエージェントが読みます。
-- モデルを追加・削除するときは、`tools.conf` の `LLAMA_FILES`、`system/llama-models.ini`、`envs/debian-pc/system/opencode/opencode.jsonc` を書き換えます。`tools.conf` から消したファイルは、次の bootstrap で消えます。モデルは / （128GB）に置くので、合計サイズに注意してください。
+- モデルを追加・削除するときは、`tools.conf` の `LLAMA_FILES`、`system/llama-models.ini` を書き換えます。`tools.conf` から消したファイルは、次の bootstrap で消えます。モデルは / （128GB）に置くので、合計サイズに注意してください。
 - llama.cpp は毎日リリースされるので、Renovate の更新 PR は週 1 回です。バージョンと SHA256（GitHub がリリースの添付ファイルごとに公開している値）を一緒に更新します。
 
 ## 更新
 ### Debian とツールの更新（自動）
 セキュリティ更新などは `unattended-upgrades` が毎日自動で適用します。再起動が必要な場合は 04:30 に自動で再起動しますが、ログイン中のユーザーがいるときは再起動しません。その場合は `/run/reboot-required` が残るので、作業の区切りで `sudo reboot` してください。
 
-Claude Code（公式 apt リポジトリの stable チャンネル）と mise の更新も、同じ仕組みで毎日自動で適用します。NVIDIA ドライバーは自動更新の対象外で、ブランチを `bootstrap.sh` の `nvidia-driver-pinning-*` で固定しています。カーネルが更新されたときは DKMS が同じ鍵でモジュールを作り直すので、MOK の登録はやり直す必要がありません。OpenCode のバージョンは `tools.conf` で固定していて、Renovate の更新 PR を `main` にマージしたあと、次の「このリポジトリの変更」の手順で反映します。
+Claude Code（公式 apt リポジトリの stable チャンネル）と mise の更新も、同じ仕組みで毎日自動で適用します。NVIDIA ドライバーは自動更新の対象外で、ブランチを `bootstrap.sh` の `nvidia-driver-pinning-*` で固定しています。カーネルが更新されたときは DKMS が同じ鍵でモジュールを作り直すので、MOK の登録はやり直す必要がありません。ttyd と llama.cpp のバージョンは `tools.conf` で固定していて、Renovate の更新 PR を `main` にマージしたあと、次の「このリポジトリの変更」の手順で反映します。
 
 ### このリポジトリの変更（手動）
 `main` にマージしただけでは PC は変わりません。PC に反映するには、管理者が次を実行します。

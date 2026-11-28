@@ -70,8 +70,8 @@ jobs:
           test -f /etc/apt/apt.conf.d/52agent-env-unattended-upgrades
 
           # エージェントのツール
-          claude --version && opencode --version && mise --version && gh --version
-          test -f /etc/claude-code/managed-settings.json && test -f /etc/opencode/opencode.jsonc
+          claude --version && mise --version && gh --version
+          test -f /etc/claude-code/managed-settings.json
           # agent ユーザーの dotfiles。tmux が設定をエラー無く読め、.tmux.conf の端末の種類（tmux-256color）が使えること
           su - agent -c 'test "$(readlink ~/.tmux.conf)" = dotfiles/.tmux.conf && test "$(readlink ~/.bashrc)" = dotfiles/.bashrc'
           su - agent -c 'tmux -L ci -f /dev/null new-session -d && tmux -L ci source-file ~/.tmux.conf && tmux -L ci kill-server'
@@ -160,11 +160,10 @@ jobs:
           '
           # bootstrap はもう一度実行しても成功する
           /src/envs/debian-pc/bootstrap.sh > /tmp/bootstrap-3.log 2>&1 || { cat /tmp/bootstrap-3.log; exit 1; }
-          # エージェントへの指示。OpenCode は instructions で同じファイルを読む。詳細のファイルを指していること
+          # エージェントへの指示。詳細のファイルを指していること
           cmp /src/envs/debian-pc/system/agents/instructions.md /etc/claude-code/CLAUDE.md
           cmp /src/envs/debian-pc/system/agents/local-llm.md /etc/agent-env/local-llm.md
           grep -q "/etc/agent-env/local-llm.md" /etc/claude-code/CLAUDE.md
-          grep -q '"instructions": \["/etc/claude-code/CLAUDE.md"\]' /etc/opencode/opencode.jsonc
           # Codex は管理者用の設定の developer_instructions で読む（TOML として読めること）
           python3 -c 'import sys, tomllib; c = tomllib.load(open("/etc/codex/managed_config.toml", "rb")); sys.exit(c["developer_instructions"] != open("/etc/claude-code/CLAUDE.md").read())'
           # Codex のサンドボックスで書き込みを許可するディレクトリが、agent ユーザーの所有で存在すること
@@ -176,16 +175,6 @@ jobs:
           grep -q 'access=\\"write\\"><path>/home/agent/.gradle</path>' /tmp/codex-prompt.json
           # 管理者用の設定は agent ユーザーの設定（ユーザー単位・プロジェクト単位）より優先される
           su - agent -c "claude update" 2>&1 | grep -q "disabled by your administrator"
-          su - agent -c '
-            mkdir -p ~/.config/opencode
-            allow="{\"policies\": [{\"action\": \"provider.use\", \"resource\": \"*\", \"effect\": \"allow\"}]}"
-            echo "${allow}" > ~/.config/opencode/opencode.jsonc
-            mkdir -p ~/proj/.opencode && echo "${allow}" > ~/proj/opencode.json && echo "${allow}" > ~/proj/.opencode/opencode.jsonc
-            cd ~/proj && OPENAI_API_KEY=dummy ANTHROPIC_API_KEY=dummy OPENCODE_CONFIG=~/proj/opencode.json opencode models --standalone > /tmp/models.txt
-            rm -r ~/.config/opencode/opencode.jsonc ~/proj'
-          grep -q "^openai/" /tmp/models.txt
-          grep -qx "llama-cpp/qwen3.6-35b-a3b" /tmp/models.txt
-          if grep -qvE "^(openai|llama-cpp)/" /tmp/models.txt; then cat /tmp/models.txt; exit 1; fi
 
           # NVIDIA ドライバー: GPU が無い CI では入れないが、リポジトリと依存関係が解決できることを確認する
           grep -q "NVIDIA の GPU が無いのでスキップします" /tmp/bootstrap.log
@@ -214,7 +203,7 @@ jobs:
           # GPU がある場合に入れる CUDA ランタイムの依存関係が解決できること
           apt-get install -s -q --no-install-recommends cuda-cudart-13-5 libcublas-13-5 | grep -q "^Inst libcublas-13-5 "
           # root 以外が書き換えられるファイルが無いこと（llama.cpp の配布物は 777 のディレクトリを含む）
-          test -z "$(find /opt/llama.cpp /etc/agent-env /etc/opencode /etc/claude-code /etc/codex -perm -o+w ! -type l)"
+          test -z "$(find /opt/llama.cpp /etc/agent-env /etc/claude-code /etc/codex -perm -o+w ! -type l)"
 
           # Mac のブラウザから接続するためのサービス（systemd は動いていないので、ユニットの検証と、ブラウザの端末の単体起動）
           out="$(systemd-analyze verify /etc/systemd/system/agent-env-terminal.service 2>&1)"

@@ -40,7 +40,6 @@
         '/^envs/debian-pc/tools\\.conf$/',
       ],
       matchStrings: [
-        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\w+_VERSION=(?<currentValue>\\S+)\\n\\w+_INTEGRITY=(?<currentDigest>sha512-[A-Za-z0-9+/=]+)',
         '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\w+_VERSION=(?<currentValue>\\S+)\\n\\w+_SHA256=(?<currentDigest>[0-9a-f]{64})',
       ],
       versioningTemplate: 'semver',
@@ -69,14 +68,6 @@
       format: 'json',
       transformTemplates: [
         '{"releases": [$map($[prerelease = false], function($r) { {"version": $r.tag_name, "releaseTimestamp": $r.published_at, "digest": $substringAfter($r.assets[name = "ttyd.x86_64" and $type(digest) = "string"].digest, "sha256:")} })[digest]]}',
-      ],
-    },
-    'npm-integrity': {
-      // npm のパッケージ情報から、各バージョンの公開日時と integrity（SHA-512）を取り出す
-      defaultRegistryUrlTemplate: 'https://registry.npmjs.org/{{packageName}}',
-      format: 'json',
-      transformTemplates: [
-        '{"releases": $each(versions, function($v, $k) { {"version": $k, "digest": $v.dist.integrity, "releaseTimestamp": $lookup($$.time, $k)} })}',
       ],
     },
   },
