@@ -244,6 +244,76 @@ else
   echo "NVIDIA の GPU が無いので、モデルとサーバーは入れません"
 fi
 
+log "監視（VictoriaMetrics、VictoriaLogs、node_exporter）"
+# 配布物（tar.gz）を SHA256 で検証し、中の実行ファイルを /usr/local/bin に置く。前回と同じ配布物なら何もしない。
+# 置き換えたら monitoring_changed を true にする
+monitoring_changed=false
+install_release_bin() { # <置く名前> <URL> <SHA256> <tar 内のパス>
+  local name="$1" url="$2" sha256="$3" member="$4" stamp="/usr/local/lib/agent-env/${1}.sha256" tmp
+  if [[ -x "/usr/local/bin/${name}" && "$(cat "${stamp}" 2>/dev/null || true)" == "${sha256}" ]]; then
+    return 0
+  fi
+  tmp="$(mktemp -d)"
+  curl -fsSL -o "${tmp}/a.tar.gz" "${url}"
+  echo "${sha256}  ${tmp}/a.tar.gz" | sha256sum -c --quiet -
+  tar -xzf "${tmp}/a.tar.gz" -C "${tmp}" --no-same-owner "${member}"
+  install -m 0755 "${tmp}/${member}" "/usr/local/bin/${name}"
+  install -d -m 0755 /usr/local/lib/agent-env
+  echo "${sha256}" > "${stamp}"
+  rm -rf "${tmp}"
+  monitoring_changed=true
+}
+install_release_bin node_exporter \
+  "https://github.com/prometheus/node_exporter/releases/download/${NODE_EXPORTER_VERSION}/node_exporter-${NODE_EXPORTER_VERSION#v}.linux-amd64.tar.gz" \
+  "${NODE_EXPORTER_SHA256}" "node_exporter-${NODE_EXPORTER_VERSION#v}.linux-amd64/node_exporter"
+install_release_bin victoria-metrics \
+  "https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/${VICTORIA_METRICS_VERSION}/victoria-metrics-linux-amd64-${VICTORIA_METRICS_VERSION}.tar.gz" \
+  "${VICTORIA_METRICS_SHA256}" victoria-metrics-prod
+install_release_bin victoria-logs \
+  "https://github.com/VictoriaMetrics/VictoriaLogs/releases/download/${VICTORIA_LOGS_VERSION}/victoria-logs-linux-amd64-${VICTORIA_LOGS_VERSION}.tar.gz" \
+  "${VICTORIA_LOGS_SHA256}" victoria-logs-prod
+# 削除などの管理用 API の鍵（初回だけ生成する。確認: sudo cat /etc/agent-env/monitoring-admin.key）
+install -d -m 0755 /etc/agent-env /etc/agent-env/monitoring
+if [[ ! -s /etc/agent-env/monitoring-admin.key ]]; then
+  (umask 077 && openssl rand -hex 32 > /etc/agent-env/monitoring-admin.key)
+fi
+# 設定とユニット（変わったら、サービスを再起動する）
+install_if_changed() { # <ファイル> <置く場所> <権限>
+  if ! cmp -s "$1" "$2"; then
+    install -m "$3" "$1" "$2"
+    monitoring_changed=true
+  fi
+}
+install_if_changed "${ENV_DIR}/system/monitoring/scrape.yml" /etc/agent-env/monitoring/scrape.yml 0644
+# node_exporter が読むファイル（GPU の指標）の置き場所。書くのは root（agent-env-gpu-metrics）だけ
+install -d -m 0755 /var/lib/agent-env /var/lib/agent-env/node-exporter
+MONITORING_UNITS=(agent-env-victoriametrics.service agent-env-victorialogs.service agent-env-node-exporter.service)
+for u in "${MONITORING_UNITS[@]}"; do
+  install_if_changed "${ENV_DIR}/system/monitoring/${u}" "/etc/systemd/system/${u}" 0644
+done
+systemctl enable "${MONITORING_UNITS[@]}"
+if has_nvidia_gpu; then
+  install -d -m 0755 /usr/local/libexec/agent-env
+  install -m 0755 "${ENV_DIR}/system/monitoring/gpu-metrics.sh" /usr/local/libexec/agent-env/gpu-metrics.sh
+  install -m 0644 "${ENV_DIR}/system/monitoring/agent-env-gpu-metrics.service" "${ENV_DIR}/system/monitoring/agent-env-gpu-metrics.timer" /etc/systemd/system/
+  systemctl enable agent-env-gpu-metrics.timer
+else
+  echo "NVIDIA の GPU が無いので、GPU の指標は取りません"
+fi
+# Codex は指標の送り方（累積）を環境変数でしか指定できないので、ログインシェルに設定する
+# （Claude Code から起動した Codex は、Claude Code の管理者用の設定の env を引き継ぐ）
+install -m 0644 "${ENV_DIR}/system/profile.d/agent-env-monitoring.sh" /etc/profile.d/
+if [[ -d /run/systemd/system ]]; then
+  systemctl daemon-reload
+  # 監視は作業中のセッションを持たないので、変わったら再起動してよい
+  if [[ "${monitoring_changed}" == true ]]; then
+    systemctl restart --no-block "${MONITORING_UNITS[@]}"
+  else
+    systemctl start --no-block "${MONITORING_UNITS[@]}"
+  fi
+  if has_nvidia_gpu; then systemctl start --no-block agent-env-gpu-metrics.timer; fi
+fi
+
 log "Mac のブラウザから接続するためのサービス"
 # エージェントの作業場所。ブラウザの端末のセッションはここで始まる。
 # agent ユーザーとして作る（root で agent のホーム以下を操作すると、agent が置いたシンボリックリンクを

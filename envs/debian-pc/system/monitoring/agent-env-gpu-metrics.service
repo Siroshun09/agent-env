@@ -1,0 +1,26 @@
+# GPU の状態を nvidia-smi で読み、node_exporter が読むファイルに書く（agent-env-gpu-metrics.timer が 30 秒ごとに起動する）。
+# NVIDIA の GPU がある場合だけ、bootstrap.sh が入れる
+[Unit]
+Description=Write GPU metrics for node_exporter
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/agent-env/gpu-metrics.sh /var/lib/agent-env/node-exporter/gpu.prom
+CPUWeight=20
+IOWeight=20
+# 通信しない。書き込めるのは出力先だけ（GPU のデバイスを使うので PrivateDevices は付けない）
+PrivateNetwork=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/agent-env/node-exporter
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native

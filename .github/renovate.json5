@@ -62,6 +62,30 @@
         '{"releases": [$map($, function($r) { {"version": $r.tag_name, "releaseTimestamp": $r.published_at, "digest": $substringAfter($r.assets[name = "llama-" & $r.tag_name & "-bin-ubuntu-cuda-13.5-x64.tar.gz"].digest, "sha256:")} })[digest]]}',
       ],
     },
+    'node-exporter': {
+      // GitHub のリリースの一覧から、linux-amd64 版の SHA256（digest）を取り出す。digest が無いリリースは除く
+      defaultRegistryUrlTemplate: 'https://api.github.com/repos/prometheus/node_exporter/releases?per_page=100',
+      format: 'json',
+      transformTemplates: [
+        '{"releases": [$map($[prerelease = false], function($r) { {"version": $r.tag_name, "releaseTimestamp": $r.published_at, "digest": $substringAfter($r.assets[name = "node_exporter-" & $substringAfter($r.tag_name, "v") & ".linux-amd64.tar.gz" and $type(digest) = "string"].digest, "sha256:")} })[digest]]}',
+      ],
+    },
+    victoriametrics: {
+      // 同上（オープンソース版の linux-amd64 版。同じリポジトリの過去の VictoriaLogs などのリリースは添付ファイルの名前で除く）
+      defaultRegistryUrlTemplate: 'https://api.github.com/repos/VictoriaMetrics/VictoriaMetrics/releases?per_page=100',
+      format: 'json',
+      transformTemplates: [
+        '{"releases": [$map($[prerelease = false], function($r) { {"version": $r.tag_name, "releaseTimestamp": $r.published_at, "digest": $substringAfter($r.assets[name = "victoria-metrics-linux-amd64-" & $r.tag_name & ".tar.gz" and $type(digest) = "string"].digest, "sha256:")} })[digest]]}',
+      ],
+    },
+    victorialogs: {
+      // 同上
+      defaultRegistryUrlTemplate: 'https://api.github.com/repos/VictoriaMetrics/VictoriaLogs/releases?per_page=100',
+      format: 'json',
+      transformTemplates: [
+        '{"releases": [$map($[prerelease = false], function($r) { {"version": $r.tag_name, "releaseTimestamp": $r.published_at, "digest": $substringAfter($r.assets[name = "victoria-logs-linux-amd64-" & $r.tag_name & ".tar.gz" and $type(digest) = "string"].digest, "sha256:")} })[digest]]}',
+      ],
+    },
     ttyd: {
       // GitHub のリリースの一覧から、静的リンク版（ttyd.x86_64）の SHA256（digest）を取り出す。digest が無いリリースは除く
       defaultRegistryUrlTemplate: 'https://api.github.com/repos/tsl0922/ttyd/releases?per_page=100',
@@ -72,6 +96,18 @@
     },
   },
   packageRules: [
+    {
+      description: 'VictoriaMetrics と VictoriaLogs は保存形式に関わるので、自動マージせず人が確認する。出た直後の不具合を避けるため 3 日待ち、週 1 回にまとめる',
+      matchDatasources: [
+        'custom.victoriametrics',
+        'custom.victorialogs',
+      ],
+      minimumReleaseAge: '3 days',
+      automerge: false,
+      schedule: [
+        '* * * * 1',
+      ],
+    },
     {
       description: 'llama.cpp は毎日リリースされるので週 1 回にまとめる。バージョンは b<番号>',
       matchDatasources: [

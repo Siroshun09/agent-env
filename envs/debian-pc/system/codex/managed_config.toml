@@ -37,3 +37,15 @@ enabled = true
 name = "llama.cpp（ローカル）"
 base_url = "http://127.0.0.1:8080/v1"
 wire_api = "responses"
+
+# 利用状況を、この PC の監視（VictoriaLogs と VictoriaMetrics。system/monitoring/）に送る。
+# プロンプトと応答の本文は送らない（既定のまま）。応答の途中経過（.delta）のイベントは量が多いので送らない
+# （件数と所要時間は指標に残る）。ログの本文（_msg）にはイベント名を使う。
+# ツールの実行結果（codex.tool_result）には、既定で引数（コマンドなど）と出力の先頭が入るので、出力は 0 バイトにし、
+# 引数と出力の項目は VictoriaLogs が受け取るときに捨てる（ignore_fields）。
+# 指標の送り方（累積）は環境変数でしか指定できない（/etc/profile.d/agent-env-monitoring.sh）
+[otel]
+log_sse_deltas = false
+tool_result = { max_bytes = 0 }
+exporter = { otlp-http = { endpoint = "http://127.0.0.1:9428/insert/opentelemetry/v1/logs?_msg_field=event.name&ignore_fields=arguments,output", protocol = "binary" } }
+metrics_exporter = { otlp-http = { endpoint = "http://127.0.0.1:8428/opentelemetry/v1/metrics", protocol = "binary" } }

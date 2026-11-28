@@ -1,0 +1,57 @@
+# ログの保存と、ログを見る画面（vmui）。PC 内（127.0.0.1:9428）だけで待ち受ける。
+# Claude Code と Codex のイベント（API の呼び出し、ツールの実行など）を OpenTelemetry で受け取る。プロンプトと応答の本文は含まない。
+# 画面: Mac で ssh -N agent-box を実行したまま http://localhost:9428/select/vmui
+# 状況確認: journalctl -u agent-env-victorialogs
+[Unit]
+Description=VictoriaLogs (log storage)
+After=network.target
+
+[Service]
+DynamicUser=yes
+StateDirectory=agent-env-victorialogs
+# 削除などの管理用 API の鍵（bootstrap.sh が生成する。root しか読めない）。画面と問い合わせには不要
+LoadCredential=admin-key:/etc/agent-env/monitoring-admin.key
+# ログは 30 日保存し、5GiB を超えたら古い日から消す。ディスクの空きが 5GiB を下回ったら書き込みを止める
+ExecStart=/usr/local/bin/victoria-logs \
+  -httpListenAddr=127.0.0.1:9428 \
+  -storageDataPath=%S/agent-env-victorialogs \
+  -retentionPeriod=30d \
+  -retention.maxDiskSpaceUsageBytes=5GiB \
+  -storage.minFreeDiskSpaceBytes=5GiB \
+  -deleteAuthKey=file://%d/admin-key \
+  -flagsAuthKey=file://%d/admin-key \
+  -forceFlushAuthKey=file://%d/admin-key \
+  -forceMergeAuthKey=file://%d/admin-key \
+  -logNewStreamsAuthKey=file://%d/admin-key \
+  -partitionManageAuthKey=file://%d/admin-key \
+  -pprofAuthKey=file://%d/admin-key
+Restart=on-failure
+RestartSec=10
+# エージェントと llama-server を優先する
+MemoryMax=1G
+CPUWeight=20
+IOWeight=20
+# 外部とは通信しない（PC 内の 127.0.0.1 だけ）
+IPAddressDeny=any
+IPAddressAllow=localhost
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

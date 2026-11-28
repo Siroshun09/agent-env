@@ -1,0 +1,64 @@
+# 指標の保存と、指標を見る画面（vmui）。PC 内（127.0.0.1:8428）だけで待ち受ける。
+# Claude Code と Codex からは OpenTelemetry で受け取り、node_exporter・llama-server・VictoriaLogs からは取りに行く（scrape.yml）。
+# 画面: Mac で ssh -N agent-box を実行したまま http://localhost:8428/vmui
+# 状況確認: journalctl -u agent-env-victoriametrics
+[Unit]
+Description=VictoriaMetrics (metrics storage)
+After=network.target
+
+[Service]
+DynamicUser=yes
+StateDirectory=agent-env-victoriametrics
+# 削除などの管理用 API の鍵（bootstrap.sh が生成する。root しか読めない）。画面と問い合わせには不要
+LoadCredential=admin-key:/etc/agent-env/monitoring-admin.key
+# 指標は 90 日保存する。ディスクの空きが 5GiB を下回ったら書き込みを止める。
+# OpenTelemetry の指標の名前は Prometheus の形式（codex_api_request_total など）に変える
+ExecStart=/usr/local/bin/victoria-metrics \
+  -httpListenAddr=127.0.0.1:8428 \
+  -storageDataPath=%S/agent-env-victoriametrics \
+  -retentionPeriod=90d \
+  -storage.minFreeDiskSpaceBytes=5GiB \
+  -promscrape.config=/etc/agent-env/monitoring/scrape.yml \
+  -selfScrapeInterval=30s \
+  -opentelemetry.usePrometheusNaming \
+  -configAuthKey=file://%d/admin-key \
+  -deleteAuthKey=file://%d/admin-key \
+  -flagsAuthKey=file://%d/admin-key \
+  -forceFlushAuthKey=file://%d/admin-key \
+  -forceMergeAuthKey=file://%d/admin-key \
+  -logNewSeriesAuthKey=file://%d/admin-key \
+  -metricNamesStatsResetAuthKey=file://%d/admin-key \
+  -pprofAuthKey=file://%d/admin-key \
+  -reloadAuthKey=file://%d/admin-key \
+  -search.resetCacheAuthKey=file://%d/admin-key \
+  -snapshotAuthKey=file://%d/admin-key
+Restart=on-failure
+RestartSec=10
+# エージェントと llama-server を優先する
+MemoryMax=1G
+CPUWeight=20
+IOWeight=20
+# 外部とは通信しない（PC 内の 127.0.0.1 だけ）
+IPAddressDeny=any
+IPAddressAllow=localhost
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

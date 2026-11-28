@@ -206,7 +206,101 @@ jobs:
           # GPU がある場合に入れる CUDA ランタイムの依存関係が解決できること
           apt-get install -s -q --no-install-recommends cuda-cudart-13-5 libcublas-13-5 | grep -q "^Inst libcublas-13-5 "
           # root 以外が書き換えられるファイルが無いこと（llama.cpp の配布物は 777 のディレクトリを含む）
-          test -z "$(find /opt/llama.cpp /etc/agent-env /etc/claude-code /etc/codex -perm -o+w ! -type l)"
+          test -z "$(find /opt/llama.cpp /etc/agent-env /etc/claude-code /etc/codex /usr/local/lib/agent-env /var/lib/agent-env -perm -o+w ! -type l)"
+
+          # 監視: tools.conf のバージョンが入り、ユニットが正しく、どれも外部と通信できない設定であること
+          bash -c 'source /src/envs/debian-pc/tools.conf
+            /usr/local/bin/node_exporter --version 2>&1 | grep -q "version ${NODE_EXPORTER_VERSION#v} "
+            /usr/local/bin/victoria-metrics -version | grep -q -- "-tags-${VICTORIA_METRICS_VERSION}-"
+            /usr/local/bin/victoria-logs -version | grep -q -- "-tags-${VICTORIA_LOGS_VERSION}-"'
+          grep -q "NVIDIA の GPU が無いので、GPU の指標は取りません" /tmp/bootstrap.log
+          mon_units=(agent-env-victoriametrics.service agent-env-victorialogs.service agent-env-node-exporter.service)
+          for u in "${mon_units[@]}"; do
+            test -L "/etc/systemd/system/multi-user.target.wants/${u}"
+            grep -qx 'IPAddressDeny=any' "/etc/systemd/system/${u}"
+          done
+          grep -qx 'PrivateNetwork=yes' /src/envs/debian-pc/system/monitoring/agent-env-gpu-metrics.service
+          sed 's|^ExecStart=/usr/local/libexec/agent-env/gpu-metrics.sh |ExecStart=/src/envs/debian-pc/system/monitoring/gpu-metrics.sh |' \
+            /src/envs/debian-pc/system/monitoring/agent-env-gpu-metrics.service > /tmp/agent-env-gpu-metrics.service
+          cp /src/envs/debian-pc/system/monitoring/agent-env-gpu-metrics.timer /tmp/
+          out="$(cd /etc/systemd/system && systemd-analyze verify "${mon_units[@]}" /tmp/agent-env-gpu-metrics.service /tmp/agent-env-gpu-metrics.timer 2>&1)"
+          if [ -n "${out}" ]; then echo "${out}"; exit 1; fi
+          test "$(stat -c '%a %U' /etc/agent-env/monitoring-admin.key)" = "600 root"
+          key="$(cat /etc/agent-env/monitoring-admin.key)"
+          test "${#key}" = 64
+          # llama-server の指標を取るモデルと、llama-models.ini のモデルが一致すること。llama-server は指標を提供すること
+          test "$(sed -n 's/.*labels: {model: \(.*\)}$/\1/p' /etc/agent-env/monitoring/scrape.yml | sort)" = \
+            "$(sed -n 's/^\[\(.*\)\]$/\1/p' /src/envs/debian-pc/system/llama-models.ini | sort)"
+          grep -q -- ' --metrics$' /src/envs/debian-pc/system/agent-env-llama.service
+          # GPU の指標（nvidia-smi は偽物に差し替える）
+          fake="$(mktemp -d)"
+          printf '#!/bin/sh\necho "0, Fake GPU, 37, 12, 6123, 8151, 45.67, 52, [N/A], 2610"\n' > "${fake}/nvidia-smi"
+          chmod +x "${fake}/nvidia-smi"
+          PATH="${fake}:${PATH}" /src/envs/debian-pc/system/monitoring/gpu-metrics.sh /var/lib/agent-env/node-exporter/gpu.prom
+          grep -qx 'gpu_up 1' /var/lib/agent-env/node-exporter/gpu.prom
+          grep -qx 'gpu_memory_used_bytes{gpu="0",name="Fake GPU"} 6420430848' /var/lib/agent-env/node-exporter/gpu.prom
+          if grep -q '^gpu_fan_percent' /var/lib/agent-env/node-exporter/gpu.prom; then exit 1; fi
+          # systemd の代わりに、ユニットの ExecStart をそのまま nobody で実行する（%S と %d は一時ディレクトリに置き換える）
+          mkdir -p /tmp/mon/state /tmp/mon/cred && cp /etc/agent-env/monitoring-admin.key /tmp/mon/cred/admin-key && chown -R nobody /tmp/mon
+          run_unit() {
+            local cmd
+            cmd="$(sed -n '/^ExecStart=/,/[^\\]$/p' "/etc/systemd/system/$1" | sed -e 's/^ExecStart=//' -e 's/\\$//' | tr '\n' ' ')"
+            cmd="${cmd//%S/\/tmp\/mon\/state}"
+            cmd="${cmd//%d/\/tmp\/mon\/cred}"
+            (setpriv --reuid=nobody --regid=nogroup --clear-groups bash -c "exec ${cmd}" > "/tmp/mon/$1.log" 2>&1 &)
+          }
+          for u in "${mon_units[@]}"; do run_unit "${u}"; done
+          for url in http://127.0.0.1:8428/health http://127.0.0.1:9428/health http://127.0.0.1:9100/metrics; do
+            for _ in $(seq 30); do curl -sf -o /dev/null "${url}" && break; sleep 1; done
+            curl -sf -o /dev/null "${url}" || { tail -n 20 /tmp/mon/*.log; exit 1; }
+          done
+          curl -s http://127.0.0.1:9100/metrics | grep -q '^gpu_up 1$'
+          curl -s http://127.0.0.1:9100/metrics | grep -q '^node_filesystem_avail_bytes{'
+          # VictoriaMetrics が node_exporter から取得できること（最初の取得まで最大 30 秒）
+          vm_query() { curl -s http://127.0.0.1:8428/api/v1/query --data-urlencode "query=$1"; }
+          for _ in $(seq 60); do vm_query 'up{job="node"} == 1' | grep -q '"job":"node"' && break; sleep 1; done
+          vm_query 'up{job="node"} == 1' | grep -q '"job":"node"'
+          # 削除などの管理用 API は鍵が必要
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST 'http://127.0.0.1:8428/api/v1/admin/tsdb/delete_series?match[]=x')" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:8428/api/v1/admin/tsdb/delete_series?match[]=x&authKey=${key}")" = 204
+          test "$(curl -s -o /dev/null -w '%{http_code}' 'http://127.0.0.1:8428/debug/pprof/')" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' 'http://127.0.0.1:9428/delete/run_task?filter=x')" = 401
+          # Codex（local-llm）: 偽の llama-server を立てる。応答だけが表示され、利用状況が届き、プロンプトは伏せられること
+          cat > /tmp/fake-llm.py <<'PY'
+          import http.server, json
+          class H(http.server.BaseHTTPRequestHandler):
+              def log_message(self, *a): pass
+              def do_GET(self):
+                  b = json.dumps({"object": "list", "data": [{"id": "qwen3.6-35b-a3b", "object": "model"}]}).encode()
+                  self.send_response(200); self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+              def do_POST(self):
+                  self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                  self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.end_headers()
+                  for t, d in [("response.created", {"response": {"id": "r"}}),
+                               ("response.output_item.done", {"item": {"type": "message", "role": "assistant", "id": "m", "content": [{"type": "output_text", "text": "FAKE-ANSWER"}]}}),
+                               ("response.completed", {"response": {"id": "r", "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}})]:
+                      d["type"] = t; self.wfile.write(f"event: {t}\ndata: {json.dumps(d)}\n\n".encode())
+          http.server.ThreadingHTTPServer(("127.0.0.1", 8080), H).serve_forever()
+          PY
+          (python3 /tmp/fake-llm.py & echo $! > /tmp/fake-llm.pid)
+          for _ in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:8080/models && break; sleep 1; done
+          test "$(su - agent -c 'local-llm secret-prompt < /dev/null')" = FAKE-ANSWER
+          vl_query() { curl -s http://127.0.0.1:9428/select/logsql/query --data-urlencode "query=$1"; }
+          for _ in $(seq 30); do vl_query '_msg:codex.user_prompt' | grep -q . && break; sleep 1; done
+          vl_query '_msg:codex.user_prompt' | grep -q '"prompt":"\[REDACTED\]"'
+          if vl_query '*' | grep -q secret-prompt; then exit 1; fi
+          for _ in $(seq 30); do vm_query 'codex_api_request_total' | grep -q '"model":"qwen3.6-35b-a3b"' && break; sleep 1; done
+          vm_query 'codex_api_request_total' | grep -q '"model":"qwen3.6-35b-a3b"'
+          # Claude Code: ログインしていないので API は呼べないが、起動時のイベントが届くこと
+          su - agent -c 'cd ~/work && timeout 60 claude -p hello < /dev/null' > /tmp/claude.out 2>&1 || true
+          for _ in $(seq 30); do vl_query 'service.name:claude-code' | grep -q . && break; sleep 1; done
+          vl_query 'service.name:claude-code' | grep -q . || { cat /tmp/claude.out; vl_query '*' | tail -n 5; exit 1; }
+          # 監視が止まっていても、エージェントはすぐに終わる（pkill -f はこのスクリプト自体に一致するので、プロセス名で止める）
+          pkill -x victoria-metric
+          pkill -x victoria-logs
+          test "$(su - agent -c 'timeout 30 local-llm hello < /dev/null')" = FAKE-ANSWER
+          pkill -x node_exporter
+          kill "$(cat /tmp/fake-llm.pid)"
 
           # Mac のブラウザから接続するためのサービス（systemd は動いていないので、ユニットの検証と、ブラウザの端末の単体起動）
           out="$(systemd-analyze verify /etc/systemd/system/agent-env-terminal.service 2>&1)"

@@ -1,0 +1,42 @@
+# マシンの指標（CPU・メモリ・ディスク・ネットワークなど）を提供する。PC 内（127.0.0.1:9100）だけで待ち受け、
+# VictoriaMetrics が取りに行く。GPU の指標は agent-env-gpu-metrics が書くファイルを読んで一緒に提供する。
+# 状況確認: journalctl -u agent-env-node-exporter
+[Unit]
+Description=Prometheus node_exporter (machine metrics)
+After=network.target
+
+[Service]
+DynamicUser=yes
+ExecStart=/usr/local/bin/node_exporter \
+  --web.listen-address=127.0.0.1:9100 \
+  --collector.textfile.directory=/var/lib/agent-env/node-exporter
+Restart=on-failure
+RestartSec=10
+MemoryMax=256M
+CPUWeight=20
+IOWeight=20
+# 外部とは通信しない（PC 内の 127.0.0.1 だけ）
+IPAddressDeny=any
+IPAddressAllow=localhost
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+ProtectSystem=strict
+# /home のディスクの使用量を読むので、隠さずに読み取り専用にする
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

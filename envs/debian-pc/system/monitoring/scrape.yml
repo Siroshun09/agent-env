@@ -1,0 +1,27 @@
+# VictoriaMetrics が取りに行く対象。bootstrap.sh が /etc/agent-env/monitoring/scrape.yml に配置する。
+# Claude Code と Codex の指標は、それぞれから OpenTelemetry で送られてくるのでここには書かない
+global:
+  scrape_interval: 30s
+
+scrape_configs:
+  # CPU・メモリ・ディスク・ネットワークと、GPU（agent-env-gpu-metrics が書くファイル）
+  - job_name: node
+    static_configs:
+      - targets: [127.0.0.1:9100]
+  - job_name: victorialogs
+    static_configs:
+      - targets: [127.0.0.1:9428]
+  # llama-server（ルーターモード）は、モデルを ?model= で指定して取る。autoload=false にして、
+  # 読み込まれていないモデルを読み込ませない（そのモデルは取れず、up が 0 になる）。
+  # モデル名は system/llama-models.ini のセクション名と合わせる
+  - job_name: llama
+    params:
+      autoload: ["false"]
+    static_configs:
+      - targets: [127.0.0.1:8080]
+        labels: {model: qwen3.6-35b-a3b}
+      - targets: [127.0.0.1:8080]
+        labels: {model: qwen3-embedding-0.6b}
+    relabel_configs:
+      - source_labels: [model]
+        target_label: __param_model

@@ -14,7 +14,7 @@ User=llama
 # llama-server は CPU で動いてしまい、気付かないうちに非常に遅くなるため
 ExecStartPre=/usr/bin/nvidia-smi -L
 # --fit（既定で有効）が、VRAM に収まるように MoE のエキスパートの置き場所などを自動で調整する
-ExecStart=/opt/llama.cpp/current/llama-server --models-preset /etc/agent-env/llama-models.ini --models-max 2 --host 127.0.0.1 --port 8080
+ExecStart=/opt/llama.cpp/current/llama-server --models-preset /etc/agent-env/llama-models.ini --models-max 2 --host 127.0.0.1 --port 8080 --metrics
 Restart=on-failure
 RestartSec=60
 

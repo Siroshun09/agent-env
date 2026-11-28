@@ -84,6 +84,7 @@ ssh -t agent-box sudo -iu agent
 エージェントのツールの管理者用の設定（`envs/debian-pc/system/claude-code/`、`envs/debian-pc/system/codex/`）は、bootstrap が `/etc/claude-code/`、`/etc/codex/` に配置します。`agent` ユーザーの設定では上書きできません。
 
 提供元への利用状況などの送信は止めています。Claude Code は利用状況・エラー報告・フィードバック・満足度調査、Codex は利用状況の分析（analytics）とフィードバックのアップロードです。Claude Code は利用状況の送信を止めると機能フラグも取得しなくなるので、機能フラグが必要な機能（Remote Control など）は使えません。
+この PC の監視（[監視](#監視)）への送信は、これとは別の仕組み（OpenTelemetry）で、PC の外には出ません。
 
 ## Mac からの接続
 PC は `agent-box.local` という名前で LAN 内に公開されます。`~/.ssh/config` に次を追加すると、`ssh agent-box` で接続できます。
@@ -95,6 +96,9 @@ Host agent-box
   LocalForward 7681 127.0.0.1:7681
   # ローカル LLM のチャット画面（llama-server。NVIDIA の GPU がある場合だけ）
   LocalForward 8080 127.0.0.1:8080
+  # 監視の画面（VictoriaMetrics と VictoriaLogs）
+  LocalForward 8428 127.0.0.1:8428
+  LocalForward 9428 127.0.0.1:9428
 ```
 再インストールすると SSH のホスト鍵が変わります。`ssh-keygen -R agent-box.local` で古い鍵を削除し、初回接続時に表示される fingerprint が、PC のログイン画面に表示される `SSH host key:` と一致することを確認してください。
 
@@ -127,11 +131,28 @@ NVIDIA の GPU がある PC では、llama.cpp の `llama-server` がサービ�
 - モデルを追加・削除するときは、`tools.conf` の `LLAMA_FILES`、`system/llama-models.ini` を書き換えます。`tools.conf` から消したファイルは、次の bootstrap で消えます。モデルは / （128GB）に置くので、合計サイズに注意してください。
 - llama.cpp は毎日リリースされるので、Renovate の更新 PR は週 1 回です。バージョンと SHA256（GitHub がリリースの添付ファイルごとに公開している値）を一緒に更新します。
 
+## 監視
+マシン、GPU、ローカル LLM、エージェント（Claude Code と Codex）の状態を、PC の中だけで記録します（`envs/debian-pc/system/monitoring/`）。どのサービスも PC 内（127.0.0.1）だけで待ち受け、外部とは通信しません（systemd の `IPAddressDeny` で禁止しています）。
+
+| 記録するもの | 取り方 | 保存先 |
+|---|---|---|
+| CPU・メモリ・ディスク・ネットワーク | node_exporter（`agent-env-node-exporter.service`） | VictoriaMetrics が 30 秒ごとに取りに行く |
+| GPU（使用率、VRAM、消費電力、温度など） | `nvidia-smi` の結果をファイルに書き、node_exporter が読む（`agent-env-gpu-metrics.timer`。NVIDIA の GPU がある場合だけ） | 同上 |
+| ローカル LLM（トークン数、処理速度、待ちの数など） | llama-server の `--metrics`。読み込まれているモデルの分だけ取れる | 同上 |
+| Claude Code と Codex（`local-llm` を含む）の利用状況 | 管理者用の設定で OpenTelemetry を有効にし、エージェントから送る | 指標（トークン数、所要時間など）は VictoriaMetrics、イベント（API の呼び出し、ツールの実行など）は VictoriaLogs |
+
+- 見るときは、`ssh -N agent-box` を実行したまま、指標は http://localhost:8428/vmui 、ログは http://localhost:9428/select/vmui を開きます（`~/.ssh/config` の `LocalForward` が必要です）。
+- 指標は 90 日、ログは 30 日（上限 5GiB）保存します。ディスクの空きが 5GiB を下回ると書き込みを止めます。メモリと CPU の使用には上限を設け、エージェントと llama-server を優先します。
+- プロンプトと応答の本文、ツールの引数と出力（コマンドの内容など）は記録しません（Codex は既定で送ってくるので、VictoriaLogs が受け取るときに捨てます）。Claude Code のイベントには、ログインしているアカウントのメールアドレスと組織 ID が含まれます（PC の中だけに保存されます）。
+- エージェントの利用状況はエージェント自身が送るので、`agent` ユーザーが止めたり、偽の値を足したりできます。資源と利用状況を見るためのもので、監査には使えません。過去のデータの削除などの管理用 API には、root しか読めない鍵（`/etc/agent-env/monitoring-admin.key`）が必要です。
+- 監視が止まっていても、エージェントと llama-server はそのまま動きます（送れなかったデータは捨てられます）。
+- VictoriaMetrics と VictoriaLogs の無償版には長期サポート（LTS）が無く、修正は最新版でしか受け取れません。Renovate の更新 PR（週 1 回、公開から 3 日後）は保存形式に関わるので自動ではマージされません。放置せずに確認してマージしてください。
+
 ## 更新
 ### Debian とツールの更新（自動）
 セキュリティ更新などは `unattended-upgrades` が毎日自動で適用します。再起動が必要な場合は 04:30 に自動で再起動しますが、ログイン中のユーザーがいるときは再起動しません。その場合は `/run/reboot-required` が残るので、作業の区切りで `sudo reboot` してください。
 
-Claude Code（公式 apt リポジトリの stable チャンネル）と mise の更新も、同じ仕組みで毎日自動で適用します。NVIDIA ドライバーは自動更新の対象外で、ブランチを `bootstrap.sh` の `nvidia-driver-pinning-*` で固定しています。カーネルが更新されたときは DKMS が同じ鍵でモジュールを作り直すので、MOK の登録はやり直す必要がありません。ttyd と llama.cpp のバージョンは `tools.conf` で固定していて、Renovate の更新 PR を `main` にマージしたあと、次の「このリポジトリの変更」の手順で反映します。
+Claude Code（公式 apt リポジトリの stable チャンネル）と mise の更新も、同じ仕組みで毎日自動で適用します。NVIDIA ドライバーは自動更新の対象外で、ブランチを `bootstrap.sh` の `nvidia-driver-pinning-*` で固定しています。カーネルが更新されたときは DKMS が同じ鍵でモジュールを作り直すので、MOK の登録はやり直す必要がありません。ttyd、llama.cpp、監視のツールのバージョンは `tools.conf` で固定していて、Renovate の更新 PR を `main` にマージしたあと、次の「このリポジトリの変更」の手順で反映します。
 
 ### このリポジトリの変更（手動）
 `main` にマージしただけでは PC は変わりません。PC に反映するには、管理者が次を実行します。
