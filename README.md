@@ -76,7 +76,7 @@ ssh -t agent-box sudo -iu agent
   - git は接続先の URL（`https://github.com/<持ち主>/...`）、gh は操作対象のリポジトリ（`-R`、`gh repo clone <持ち主>/<名前>`、今いるリポジトリの `gh repo set-default` やリモートなど）から持ち主を判断し、そのトークンを使います。エージェントは使い分けを意識する必要はありません。
   - 持ち主のトークンが無い場合や、持ち主がわからない場合は、どのトークンも使いません（別の持ち主のトークンを誤って使わないため）。
   - SSH の URL（`git@github.com:...`、`ssh://git@github.com/...`）は、git が HTTPS に読み替えます。この PC には SSH の鍵を置かず、トークンで認証するためです。
-  - `gh auth login` と `gh auth setup-git` は使えないようにしています。以前の方式で保存した gh の認証情報と git の設定は、bootstrap が削除します。
+  - `gh auth login` と `gh auth setup-git` は使えないようにしています。
   - デフォルトブランチへの force push（fast-forward でない更新）と削除は、git の pre-push フックが止めます。GitHub Free の private リポジトリではブランチ保護も ruleset も使えないためです。すべてのリポジトリに `/etc/gitconfig` の `core.hooksPath` で適用し、リポジトリ自身のフック（`.git/hooks`）も続けて実行します。
     - 誤操作を防ぐためのもので、`git push --no-verify` や GitHub の API では迂回できます。確実に防ぐには、private リポジトリでもブランチ保護や ruleset を使える GitHub の有料プランが必要です。
     - リポジトリの設定で `core.hooksPath` を変えている場合（husky など）は、このフックは動きません。
