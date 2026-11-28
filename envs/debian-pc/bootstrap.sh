@@ -326,6 +326,8 @@ install -d -m 0755 /etc/agent-env
 if [[ ! -s /etc/agent-env/terminal.env ]]; then
   (umask 077 && printf 'TERMINAL_PASSWORD=%s\n' "$(openssl rand -hex 16)" > /etc/agent-env/terminal.env)
 fi
+# 外出先のブラウザから開けるように、画面を tailnet に公開するコマンド（管理者が手動で実行する）
+install -m 0755 "${ENV_DIR}/system/agent-env-tailnet-serve.sh" /usr/local/sbin/agent-env-tailnet-serve
 UNITS=(agent-env-terminal.service agent-env-gateway.service)
 for u in "${UNITS[@]}"; do
   install -m 0644 "${ENV_DIR}/system/${u}" /etc/systemd/system/

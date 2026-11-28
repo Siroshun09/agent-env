@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- ゲートウェイの一覧のページ（http://agent-box.localhost）。各画面は、ホスト名ごとに別のオリジンで開く -->
+<!-- ゲートウェイの一覧のページ（http://agent-box.localhost、tailnet では https://<この PC>.<tailnet>.ts.net）。各画面は別のオリジンで開く -->
 <html lang="ja">
 <head>
 <meta charset="utf-8">
@@ -25,18 +25,22 @@
 <main>
   <h1>agent-box</h1>
   <ul>
-    <li><a data-host="term" data-path="/">ブラウザの端末</a><span>Claude Code、Codex など（ユーザー名は agent）</span></li>
-    <li><a data-host="dash" data-path="/">監視の概要</a><span>マシン、GPU、ローカル LLM、エージェント</span></li>
-    <li><a data-host="llm" data-path="/">ローカル LLM</a><span>llama-server のチャット画面（NVIDIA の GPU がある場合だけ）</span></li>
-    <li><a data-host="metrics" data-path="/vmui/">指標</a><span>VictoriaMetrics の vmui（任意の問い合わせ）</span></li>
-    <li><a data-host="logs" data-path="/select/vmui/">ログ</a><span>VictoriaLogs の vmui（エージェントのイベント）</span></li>
+    <li><a data-host="term" data-port="8443" data-path="/">ブラウザの端末</a><span>Claude Code、Codex など（ユーザー名は agent）</span></li>
+    <li><a data-host="dash" data-port="8444" data-path="/">監視の概要</a><span>マシン、GPU、ローカル LLM、エージェント</span></li>
+    <li><a data-host="llm" data-port="8445" data-path="/">ローカル LLM</a><span>llama-server のチャット画面（NVIDIA の GPU がある場合だけ）</span></li>
+    <li><a data-host="metrics" data-port="8446" data-path="/vmui/">指標</a><span>VictoriaMetrics の vmui（任意の問い合わせ）</span></li>
+    <li><a data-host="logs" data-port="8447" data-path="/select/vmui/">ログ</a><span>VictoriaLogs の vmui（エージェントのイベント）</span></li>
   </ul>
 </main>
 <script>
-  // 各画面のホスト名は <名前>.<このページのホスト名> で、ポートはこのページと同じ
+  // *.localhost では、各画面のホスト名は <名前>.<このページのホスト名> で、ポートはこのページと同じ。
+  // tailnet（https://<この PC>.<tailnet>.ts.net）では、ホスト名は同じで、画面ごとのポート（data-port）で開く
+  const tailnet = !location.hostname.endsWith(".localhost");
   const port = location.port ? `:${location.port}` : "";
   for (const a of document.querySelectorAll("a[data-host]")) {
-    a.href = `${location.protocol}//${a.dataset.host}.${location.hostname}${port}${a.dataset.path}`;
+    a.href = tailnet
+      ? `${location.protocol}//${location.hostname}:${a.dataset.port}${a.dataset.path}`
+      : `${location.protocol}//${a.dataset.host}.${location.hostname}${port}${a.dataset.path}`;
   }
 </script>
 </body>
