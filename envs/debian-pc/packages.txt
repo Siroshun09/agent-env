@@ -23,6 +23,8 @@ mokutil
 claude-code
 mise
 gh
+# Codex のサンドボックス（無いと Codex 同梱のものを使い、毎回警告が出る）
+bubblewrap
 # rootless podman（uidmap は Recommends なので --no-install-recommends では入らない）
 podman
 uidmap
