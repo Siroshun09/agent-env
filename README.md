@@ -142,7 +142,11 @@ NVIDIA の GPU がある PC では、llama.cpp の `llama-server` がサービ�
 | Claude Code と Codex（`local-llm` を含む）の利用状況 | 管理者用の設定で OpenTelemetry を有効にし、エージェントから送る | 指標（トークン数、所要時間など）は VictoriaMetrics、イベント（API の呼び出し、ツールの実行など）は VictoriaLogs |
 
 - 見るときは、`ssh -N agent-box` を実行したまま、指標は http://localhost:8428/vmui 、ログは http://localhost:9428/select/vmui を開きます（`~/.ssh/config` の `LocalForward` が必要です）。
-- 主要な指標（CPU、メモリ、ディスク、GPU、ローカル LLM、エージェント）は 1 ページにまとめてあります: http://localhost:8428/vmui/#/dashboards?legend_hide_stats=true&legend_group=panel （定義は `envs/debian-pc/system/monitoring/dashboards/`。末尾の指定は凡例を名前だけにするためのものです）
+- 主要な指標（CPU、メモリ、ディスク、GPU、ローカル LLM、エージェント）は、`envs/debian-pc/dashboard.html` を Mac のブラウザで開くと 1 ページで見られます。PC には置かず、ブラウザが http://localhost:8428 から直接データを取ります（30 秒ごとに更新）。グラフの描画には uPlot を jsDelivr から読み込みます（版と SRI ハッシュで固定）。リポジトリを clone していなければ、次のコマンドで取得できます。
+  ```bash
+  curl -fsSL -o ~/agent-env-dashboard.html https://raw.githubusercontent.com/Siroshun09/agent-env/main/envs/debian-pc/dashboard.html
+  ```
+  細かく調べるとき（範囲の拡大、任意のクエリ）は vmui を使います。
 - 指標は 90 日、ログは 30 日（上限 5GiB）保存します。ディスクの空きが 5GiB を下回ると書き込みを止めます。メモリと CPU の使用には上限を設け、エージェントと llama-server を優先します。
 - プロンプトと応答の本文、ツールの引数と出力（コマンドの内容など）は記録しません（Codex は既定で送ってくるので、VictoriaLogs が受け取るときに捨てます）。Claude Code のイベントには、ログインしているアカウントのメールアドレスと組織 ID が含まれます（PC の中だけに保存されます）。
 - エージェントの利用状況はエージェント自身が送るので、`agent` ユーザーが止めたり、偽の値を足したりできます。資源と利用状況を見るためのもので、監査には使えません。過去のデータの削除などの管理用 API には、root しか読めない鍵（`/etc/agent-env/monitoring-admin.key`）が必要です。
