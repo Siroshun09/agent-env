@@ -30,7 +30,6 @@ envs/debian-pc/                Debian 13 の実 PC
   preseed.cfg                  インストーラへの応答
   select-disk.sh               インストール先ディスクの選択画面
   late-command.sh              インストールの最後に、リポジトリと SSH を設定する
-  mac-port80.sh                Mac で、ゲートウェイの画面をポート番号なしの URL で開けるようにする
   mok-enroll.sh                Secure Boot 用に、NVIDIA ドライバーの署名鍵の登録（MOK）を申請する
   bootstrap.sh                 PC をセットアップする（冪等）
   apply.sh                     main の変更を、確認・承認したうえで PC に反映する
@@ -102,10 +101,7 @@ Host agent-box
 ### ブラウザで開く画面
 `ssh -N agent-box` を実行したまま、Mac のブラウザで http://agent-box.localhost を開くと、PC 内の画面の一覧が表示されます。
 
-ポート番号なしで開くには、Mac で次を一度だけ実行します（元に戻すときは `--uninstall` を付けます）。Mac 内の 80 番への接続を、SSH が転送している 8700 番に振り替えます（pf）。80 番は root でないと待ち受けられないため、ssh は 8700 番のまま使います。対象はループバックだけなので、LAN からは届きません。実行しない場合は、URL に `:8700` を付けて開きます（例: http://agent-box.localhost:8700 ）。
-```bash
-sudo envs/debian-pc/mac-port80.sh
-```
+この節の URL はポート番号なしで書いています。Mac の 80 番への接続を 8700 番に届ける設定（例: [Siroshun09/dotfiles](https://github.com/Siroshun09/dotfiles) の `scripts/mac/localhost-proxy/`）をしていない場合は、`:8700` を付けて開きます（例: http://agent-box.localhost:8700 ）。
 
 | 画面 | URL |
 |---|---|
