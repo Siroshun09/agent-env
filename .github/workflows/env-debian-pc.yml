@@ -254,12 +254,15 @@ jobs:
             for _ in $(seq 30); do curl -sf -o /dev/null "${url}" && break; sleep 1; done
             curl -sf -o /dev/null "${url}" || { tail -n 20 /tmp/mon/*.log; exit 1; }
           done
-          curl -s http://127.0.0.1:9100/metrics | grep -q '^gpu_up 1$'
-          curl -s http://127.0.0.1:9100/metrics | grep -q '^node_filesystem_avail_bytes{'
+          # （curl … | grep -q だと、grep が先に終わったときに curl が失敗し、pipefail で失敗になるので、変数に受けてから調べる）
+          metrics="$(curl -s http://127.0.0.1:9100/metrics)"
+          grep -q '^gpu_up 1$' <<< "${metrics}"
+          grep -q '^node_filesystem_avail_bytes{' <<< "${metrics}"
           # VictoriaMetrics が node_exporter から取得できること（最初の取得まで最大 30 秒）
-          vm_query() { curl -s http://127.0.0.1:8428/api/v1/query --data-urlencode "query=$1"; }
-          for _ in $(seq 60); do vm_query 'up{job="node"} == 1' | grep -q '"job":"node"' && break; sleep 1; done
-          vm_query 'up{job="node"} == 1' | grep -q '"job":"node"'
+          # vm_query <問い合わせ> <含むべき文字列>
+          vm_query() { local r; r="$(curl -s http://127.0.0.1:8428/api/v1/query --data-urlencode "query=$1")"; grep -qF -- "$2" <<< "${r}"; }
+          for _ in $(seq 60); do vm_query 'up{job="node"} == 1' '"job":"node"' && break; sleep 1; done
+          vm_query 'up{job="node"} == 1' '"job":"node"'
           # 削除などの管理用 API は鍵が必要
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST 'http://127.0.0.1:8428/api/v1/admin/tsdb/delete_series?match[]=x')" = 401
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:8428/api/v1/admin/tsdb/delete_series?match[]=x&authKey=${key}")" = 204
@@ -285,16 +288,17 @@ jobs:
           (python3 /tmp/fake-llm.py & echo $! > /tmp/fake-llm.pid)
           for _ in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:8080/models && break; sleep 1; done
           test "$(su - agent -c 'local-llm secret-prompt < /dev/null')" = FAKE-ANSWER
-          vl_query() { curl -s http://127.0.0.1:9428/select/logsql/query --data-urlencode "query=$1"; }
-          for _ in $(seq 30); do vl_query '_msg:codex.user_prompt' | grep -q . && break; sleep 1; done
-          vl_query '_msg:codex.user_prompt' | grep -q '"prompt":"\[REDACTED\]"'
-          if vl_query '*' | grep -q secret-prompt; then exit 1; fi
-          for _ in $(seq 30); do vm_query 'codex_api_request_total' | grep -q '"model":"qwen3.6-35b-a3b"' && break; sleep 1; done
-          vm_query 'codex_api_request_total' | grep -q '"model":"qwen3.6-35b-a3b"'
+          # vl_query <問い合わせ> <含むべき文字列>
+          vl_query() { local r; r="$(curl -s http://127.0.0.1:9428/select/logsql/query --data-urlencode "query=$1")"; grep -qF -- "$2" <<< "${r}"; }
+          for _ in $(seq 30); do vl_query '_msg:codex.user_prompt' '"prompt"' && break; sleep 1; done
+          vl_query '_msg:codex.user_prompt' '"prompt":"[REDACTED]"'
+          if vl_query '*' secret-prompt; then exit 1; fi
+          for _ in $(seq 30); do vm_query 'codex_api_request_total' '"model":"qwen3.6-35b-a3b"' && break; sleep 1; done
+          vm_query 'codex_api_request_total' '"model":"qwen3.6-35b-a3b"'
           # Claude Code: ログインしていないので API は呼べないが、起動時のイベントが届くこと
           su - agent -c 'cd ~/work && timeout 60 claude -p hello < /dev/null' > /tmp/claude.out 2>&1 || true
-          for _ in $(seq 30); do vl_query 'service.name:claude-code' | grep -q . && break; sleep 1; done
-          vl_query 'service.name:claude-code' | grep -q . || { cat /tmp/claude.out; vl_query '*' | tail -n 5; exit 1; }
+          for _ in $(seq 30); do vl_query 'service.name:claude-code' '"service.name":"claude-code"' && break; sleep 1; done
+          vl_query 'service.name:claude-code' '"service.name":"claude-code"' || { cat /tmp/claude.out; exit 1; }
           # 監視が止まっていても、エージェントはすぐに終わる（pkill -f はこのスクリプト自体に一致するので、プロセス名で止める）
           pkill -x victoria-metric
           pkill -x victoria-logs
