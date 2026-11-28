@@ -5,6 +5,10 @@
 # バージョンは /etc/mise/config.toml で固定し、Renovate と apply.sh で更新する
 check_for_update_on_startup = false
 
+# OpenAI への利用状況の送信（analytics）と、フィードバックのアップロードを止める
+analytics.enabled = false
+feedback.enabled = false
+
 # サンドボックスの権限（作業中のリポジトリ以外は書き込み不可）。ビルドツールが使うキャッシュへの書き込みと、
 # 依存のダウンロードなどのための外向きの通信を許可する（無効だと Gradle などがソケットを作れず止まる）。
 # 旧来の sandbox_workspace_write は、組み込みのプロファイル（:workspace）が明示的に選ばれると無視されるので、
