@@ -1,0 +1,159 @@
+{
+  "title": "概要",
+  "rows": [
+    {
+      "panels": [
+        {
+          "title": "CPU 使用率",
+          "unit": "%",
+          "width": 3,
+          "expr": [
+            "100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"})))",
+            "100 * avg(rate(node_cpu_seconds_total{mode=\"iowait\"}))"
+          ],
+          "alias": [
+            "使用率",
+            "I/O 待ち"
+          ]
+        },
+        {
+          "title": "メモリ",
+          "unit": "GiB",
+          "width": 3,
+          "expr": [
+            "(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / 2^30",
+            "(node_memory_Cached_bytes + node_memory_Buffers_bytes) / 2^30",
+            "(node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes) / 2^30"
+          ],
+          "alias": [
+            "使用中",
+            "キャッシュ",
+            "スワップ"
+          ]
+        },
+        {
+          "title": "ディスク使用率",
+          "unit": "%",
+          "width": 3,
+          "expr": [
+            "100 * (1 - node_filesystem_avail_bytes{mountpoint=~\"/|/home\"} / node_filesystem_size_bytes{mountpoint=~\"/|/home\"})"
+          ],
+          "alias": [
+            "{{mountpoint}}"
+          ]
+        },
+        {
+          "title": "ディスク I/O",
+          "unit": "MiB/s",
+          "width": 3,
+          "expr": [
+            "sum(rate(node_disk_read_bytes_total{device!~\"loop.*|ram.*|zram.*\"})) / 2^20",
+            "sum(rate(node_disk_written_bytes_total{device!~\"loop.*|ram.*|zram.*\"})) / 2^20"
+          ],
+          "alias": [
+            "読み込み",
+            "書き込み"
+          ]
+        },
+        {
+          "title": "GPU 使用率",
+          "unit": "%",
+          "width": 3,
+          "expr": [
+            "gpu_utilization_percent",
+            "gpu_memory_bandwidth_utilization_percent"
+          ],
+          "alias": [
+            "演算",
+            "メモリ帯域"
+          ]
+        },
+        {
+          "title": "VRAM",
+          "unit": "GiB",
+          "width": 3,
+          "expr": [
+            "gpu_memory_used_bytes / 2^30",
+            "gpu_memory_total_bytes / 2^30"
+          ],
+          "alias": [
+            "使用中",
+            "合計"
+          ]
+        },
+        {
+          "title": "GPU の電力と温度",
+          "width": 3,
+          "expr": [
+            "gpu_power_watts",
+            "gpu_temperature_celsius"
+          ],
+          "alias": [
+            "電力 (W)",
+            "温度 (°C)"
+          ]
+        },
+        {
+          "title": "ローカル LLM の速度",
+          "description": "llama-server が処理したトークン数（毎秒）",
+          "unit": "tokens/s",
+          "width": 3,
+          "expr": [
+            "rate(llamacpp:tokens_predicted_total)",
+            "rate(llamacpp:prompt_tokens_total)"
+          ],
+          "alias": [
+            "生成 {{model}}",
+            "プロンプト {{model}}"
+          ]
+        },
+        {
+          "title": "ローカル LLM のリクエスト",
+          "width": 3,
+          "expr": [
+            "llamacpp:requests_processing",
+            "llamacpp:requests_deferred"
+          ],
+          "alias": [
+            "処理中 {{model}}",
+            "待ち {{model}}"
+          ]
+        },
+        {
+          "title": "Claude Code のトークン",
+          "description": "グラフの 1 区間あたりのトークン数",
+          "width": 3,
+          "expr": [
+            "sum by (type) (increase({__name__=~\"claude_code_token_usage.*\"}))"
+          ],
+          "alias": [
+            "{{type}}"
+          ]
+        },
+        {
+          "title": "Claude Code の費用（目安）",
+          "description": "グラフの 1 区間あたりの USD。サブスクリプションでは実際の請求額ではない",
+          "unit": "USD",
+          "width": 3,
+          "expr": [
+            "sum by (model) (increase({__name__=~\"claude_code_cost_usage.*\"}))"
+          ],
+          "alias": [
+            "{{model}}"
+          ]
+        },
+        {
+          "title": "Codex のリクエスト",
+          "description": "グラフの 1 区間あたりの回数（local-llm など）",
+          "width": 3,
+          "expr": [
+            "sum by (model) (increase(codex_api_request_total))"
+          ],
+          "alias": [
+            "{{model}}"
+          ]
+        }
+      ]
+    }
+  ]
+}

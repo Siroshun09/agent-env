@@ -285,6 +285,10 @@ install_if_changed() { # <ファイル> <置く場所> <権限>
   fi
 }
 install_if_changed "${ENV_DIR}/system/monitoring/scrape.yml" /etc/agent-env/monitoring/scrape.yml 0644
+# vmui の Dashboards タブの定義（VictoriaMetrics が画面を開くたびに読むので、再起動は不要）
+install -d -m 0755 /etc/agent-env/monitoring/dashboards
+rm -f /etc/agent-env/monitoring/dashboards/*.json
+install -m 0644 "${ENV_DIR}"/system/monitoring/dashboards/*.json /etc/agent-env/monitoring/dashboards/
 # node_exporter が読むファイル（GPU の指標）の置き場所。書くのは root（agent-env-gpu-metrics）だけ
 install -d -m 0755 /var/lib/agent-env /var/lib/agent-env/node-exporter
 MONITORING_UNITS=(agent-env-victoriametrics.service agent-env-victorialogs.service agent-env-node-exporter.service)
