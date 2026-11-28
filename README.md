@@ -84,7 +84,7 @@ ssh -t agent-box sudo -iu agent
 
 エージェントのツールの管理者用の設定（`envs/debian-pc/system/claude-code/`、`envs/debian-pc/system/codex/`）は、bootstrap が `/etc/claude-code/`、`/etc/codex/` に配置します。`agent` ユーザーの設定では上書きできません。
 
-提供元への利用状況などの送信は止めています。Claude Code は利用状況・エラー報告・フィードバック・満足度調査、Codex は利用状況の分析（analytics）とフィードバックのアップロードです。Claude Code は利用状況の送信を止めると機能フラグも取得しなくなるので、機能フラグが必要な機能（Remote Control など）は使えません。
+提供元への利用状況などの送信は止めています。Claude Code は利用状況・エラー報告・フィードバック・満足度調査、Codex は利用状況の分析（analytics）とフィードバックのアップロード、Tailscale は診断ログ（`TS_NO_LOGS_NO_SUPPORT`。Tailscale のサポートは受けられなくなります）です。Claude Code は利用状況の送信を止めると機能フラグも取得しなくなるので、機能フラグが必要な機能（Remote Control など）は使えません。
 この PC の監視（[監視](#監視)）への送信は、これとは別の仕組み（OpenTelemetry）で、PC の外には出ません。
 
 ## Mac からの接続
